@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Simon Gergely | dev</title>
+    <link rel="canonical" href="https://sige25.dev" />
+    <meta name="description" content="Simon Gergely's business card: a cybersecurity oriented back-end developer's portfolio." />
     <link href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAmklEQVR4nM2SSwqDQBBEH+QcegSX8QquNC5yIPUqAcVL6C73iQtdCIaGFhriZwQDFhQMMzXV09UDV0EKdMDkSNEm1qAC3sDTkaItrUGtdMWPvr6kwQ0ogFzXhw0ik3r0d4PKjNEzLcjzM9OCtzbGB/DRatL3GgrViDbe0BECLTAqG+C+dcEiAIaF79vr2S584GWCmil7cz7n4QvdUkFpccOwGAAAAABJRU5ErkJggg==" rel="icon" type="image/x-icon" />
     <link rel="preload"
           as="style"
@@ -25,6 +27,9 @@
             display: flex;
             justify-content: center;
             padding-top: 3rem;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 1s ease-out forwards;
         }
 
         .info-block {
@@ -64,6 +69,13 @@
 
         a:hover {
             color: #3498db;
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 </head>
