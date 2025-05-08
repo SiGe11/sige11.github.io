@@ -6,12 +6,18 @@
     <title>Simon Gergely | dev</title>
     <link rel="canonical" href="https://sige25.dev" />
     <meta name="description" content="Simon Gergely's business card: a cybersecurity oriented back-end developer's portfolio." />
+    <meta name="theme-color" content="#3498db">
     <link href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAmklEQVR4nM2SSwqDQBBEH+QcegSX8QquNC5yIPUqAcVL6C73iQtdCIaGFhriZwQDFhQMMzXV09UDV0EKdMDkSNEm1qAC3sDTkaItrUGtdMWPvr6kwQ0ogFzXhw0ik3r0d4PKjNEzLcjzM9OCtzbGB/DRatL3GgrViDbe0BECLTAqG+C+dcEiAIaF79vr2S584GWCmil7cz7n4QvdUkFpccOwGAAAAABJRU5ErkJggg==" rel="icon" type="image/x-icon" />
+    <link rel="preload"
+          as="style"
+          href="css/style.css"
+          onload="this.rel='stylesheet'">
     <link rel="preload"
           as="style"
           href="css/bootstrap-grid.min.css"
           onload="this.rel='stylesheet'">
     <noscript>
+        <link rel="stylesheet" href="css/style.css">
         <link rel="stylesheet" href="css/bootstrap-grid.min.css">
     </noscript>
     <link rel="preload"
@@ -24,86 +30,6 @@
           as="font"
           type="font/woff2"
           crossorigin="anonymous">
-    <style>
-        @font-face {
-            font-display: swap;
-            font-family: 'Open Sans';
-            font-style: normal;
-            font-weight: 400;
-            src: url('fonts/open-sans-v40-latin-regular.woff2') format('woff2');
-        }
-
-        @font-face {
-            font-display: swap;
-            font-family: 'Open Sans';
-            font-style: normal;
-            font-weight: 700;
-            src: url('fonts/open-sans-v40-latin-700.woff2') format('woff2');
-        }
-
-        html, body {
-            height: 100%;
-            margin: 0;
-            background-color: #f8f9fa;
-            color: #2c3e50;
-            font-family: "Open Sans", sans-serif;
-        }
-
-        .main-container {
-            display: flex;
-            justify-content: center;
-            padding-top: 3rem;
-            opacity: 0;
-            transform: translateY(20px);
-            animation: fadeInUp 1s ease-out forwards;
-        }
-
-        .info-block {
-            max-width: 300px;
-            text-align: left;
-        }
-
-        h1 {
-            font-size: 2.25rem;
-            margin-bottom: 0.25rem;
-            font-weight: 700;
-        }
-
-        h2 {
-            font-size: 1.25rem;
-            margin-top: 0;
-            margin-bottom: 1rem;
-            font-weight: 400;
-            color: #3498db;
-        }
-
-        ul {
-            list-style-type: disc;
-            padding-left: 1.5rem;
-            margin: 0;
-        }
-
-        li {
-            margin-bottom: 0.5rem;
-        }
-
-        a {
-            color: #34495e;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        a:hover {
-            color: #3498db;
-        }
-
-        @keyframes fadeInUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-    </style>
 </head>
 <body>
 <div class="main-container">
