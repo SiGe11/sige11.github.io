@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>TryHackMe Write-Up | Simon Gergely</title>
+    <link rel="canonical" href="https://sige25.dev/writeup.html"/>
+    <meta name="description" content="TryHackMe room write-up by Simon Gergely."/>
+    <meta name="theme-color" content="#f8f9fa">
+    <link href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAJHRFWHRDb21tZW50AGNtaG1aSHRTTTIxalgzTm5NWEpmYzI1ZmJETjmOtQRBAAAAmklEQVR4nGNgGAxAjIGB4QYDA8N/EvENqF6GIKhAKIn4P1QvA4xDKoBZykBTA6ygmCwDJiEF2ARyDPiEZMBHcgw4imTAYXIMkGJgYOiHYkl8BnhAOUsYGBhkGQgDOaja/1C9DMwMDAxNSAbwMDAw1DMwMFyAhgMIg9ggMZAcSA1IbSNULwY4jSf5niLChQyLGBgYVuHAIDnqAgDBfEtYIHIh9wAAAABJRU5ErkJggg=="
+          rel="icon" type="image/x-icon"/>
+    <link rel="preload" href="../../../fonts/open-sans-v40-latin-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link rel="preload" href="../../../fonts/open-sans-v40-latin-700.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link rel="preload" as="style" href="../../../css/bootstrap-grid.min.css" onload="this.rel='stylesheet'">
+    <link rel="stylesheet" href="../../../css/style.css">
+    <link rel="stylesheet" href="fp_style.css">
+    <noscript>
+        <link rel="stylesheet" href="../../../css/bootstrap-grid.min.css">
+    </noscript>
+</head>
+<body>
+<div class="main-container">
+    <div class="info-block">
+        <h1>THM Write-Up</h1>
+        <h2>Room: <em>Funpage</em></h2>
+    </div>
+</div>
+
+<div class="container mt-5 pb-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-md-10 col-lg-8">
+            <div class="p-4 writeup-card">
+                <h2>Introduction</h2>
+                <p>Funpage is a short, easy CTF designed to practice very basic penetration-testing skills.
+                    Let’s start the machine:</p>
+
+                <h2>How many ports are open?</h2>
+                <p>First, we begin with reconnaissance. Let’s find out which services the target is running:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
+                    <pre><code>sudo nmap -sS $IP</code></pre>
+                </div>
+                <p>The result:</p>
+                <img src="images/nmap.png" alt="Nmap output" class="img-fluid writeup-img mb-4">
+                <p>From the scan, we see that two ports are open: SSH and HTTP.</p>
+
+                <h2>What is the username?</h2>
+                <p>Let’s explore the target. We saw that there is an HTTP server running on it. Check this on:
+                <i>http://$IP/</i></p>
+                <img src="images/main-page.png" alt="Main page" loading="lazy" class="img-fluid writeup-img mb-4">
+                <p>Nothing obvious stands out. Maybe we should inspect the page’s source code:</p>
+                <img src="images/main-source.png" alt="Main page source" loading="lazy" class="img-fluid writeup-img mb-4">
+                <p>Interesting. There is a huge blob of base64 encoded image. Make a note of it, maybe we should check
+                this later for hidden infos.</p>
+                <p>But first let's do a site discovery:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
+                    <pre><code>gobuster -u http://$IP/ -w SecLists/Discovery/Web-Content/common.txt dir</code></pre>
+                </div>
+                <p>We can see that there is an additional directory on the server: <i>/dev</i></p>
+                <p>It contains a list, that seems not useful for us. But check the source code:</p>
+                <img src="images/dev-source.png" alt="Subpage source" loading="lazy" class="img-fluid writeup-img mb-4">
+                <p>We see a base64 encoded text. We should decode it:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
+                    <pre><code>echo $TEXT | base64 --decode</code></pre>
+                </div>
+                <p>The result seems not usable, but also seems very familiar. Looks like words in a different language:
+                    a property of Caesar ciphers. Let's decode it: shifting the letter we got a readable result with two
+                names in it. One must be the username. And indeed, one of them it is!</p>
+
+                <h2>What is the user flag?</h2>
+                <p>How to access the target machine? We saw earlier that an SSH service is also running.
+                Let's try access through that! We have a username. But what about the password? Earlier we read, that
+                the user doesn't like to use complicated passwords. So we should give brute force a try.</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
+                    <pre><code>hydra -l REDACTED -P ./SecLists/Passwords/Leaked-Databases/rockyou.txt.tar.gz $IP ssh</code></pre>
+                </div>
+                <p>Indeed, we have a password:</p>
+                <img src="images/hydra.jpg" alt="Hydra output" loading="lazy" class="img-fluid writeup-img mb-4">
+                Let's access the machine:
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
+                    <pre><code>ssh REDACTED@$IP</code></pre>
+                </div>
+                <p>And we are in. We can find the user flag in the user's home folder.</p>
+                <p>Note: it seems to user runs a reduced shell. We can fix it easily to issue <code>bash</code>.</p>
+
+                <h2>What is the root flag?</h2>
+                <p>We should escalate the user's privileges. It would be a good idea to run linPEAS, but first check
+                    if we have any sudo rights:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
+                    <pre><code>sudo -l</code></pre>
+                </div>
+                <p>And we have:</p>
+                <img src="images/sudo.jpg" alt="sudo rights" loading="lazy" class="img-fluid writeup-img mb-4">
+                <p>The user can run <i>nano</i> as root. Let's check how to exploit it in
+                    <a href="https://gtfobins.github.io/gtfobins/nano/" target="_blank">GTFOBins</a>. Following the
+                instructions there we can get us a root shell, and check the root flag in the root directory.</p>
+
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    function copyToClipboard(button) {
+        const code = button.nextElementSibling.innerText;
+        navigator.clipboard.writeText(code).then(() => {
+            button.textContent = 'Copied!';
+            setTimeout(() => button.textContent = 'Copy', 2000);
+        });
+    }
+</script>
+</body>
+</html>
