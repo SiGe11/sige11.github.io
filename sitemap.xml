@@ -5,10 +5,14 @@
       xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
             http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
 
-<url>
-  <loc>https://sige25.dev/</loc>
-  <lastmod>2025-05-08T17:10:07+00:00</lastmod>
-</url>
+  <url>
+    <loc>https://sige25.dev/</loc>
+    <lastmod>2025-05-08T17:10:07+00:00</lastmod>
+  </url>
+  <url>
+    <loc>https://sige25.dev/content/writeups/funpage/</loc>
+    <lastmod>2025-06-02T14:49:07+00:00</lastmod>
+  </url>
 
 
 </urlset>
