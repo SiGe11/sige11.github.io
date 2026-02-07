@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <title>Wekerletelep — Eladó lakás</title>
     <meta name="description" content="Tulajdonostól eladó 76 m2-es 3 hálószobás + nappalis, kertes lakás Wekerletelepen.">
     <meta name="keywords" content="eladó lakás, Wekerletelep, kertkapcsolat, Budapest, ingatlan, modern konyha, klíma, készpénzes vevő, zöld környezet, csendes utca">
@@ -38,8 +38,14 @@
       }
     }
     </script>
-    <link href="css/bootstrap.min.css" rel="stylesheet">
-    <link href="css/styles.css" rel="stylesheet">
+    <link rel="preload"
+          as="style"
+          href="css/bootstrap.min.css"
+          onload="this.rel='stylesheet'">
+    <link rel="stylesheet" href="css/styles.css">
+    <noscript>
+        <link rel="stylesheet" href="css/bootstrap.min.css">
+    </noscript>
     <meta name="theme-color" content="#263d2f">
 </head>
 <body>
@@ -100,24 +106,29 @@
             <!-- If JavaScript is disabled, show the remaining images after the main text -->
             <noscript>
                 <div class="mt-3">
-                    <img src="images/wekerle-elado-lakas2.jpg" class="img-fluid rounded mb-2" alt="Nappali">
-                    <img src="images/wekerle-elado-lakas3.jpg" class="img-fluid rounded mb-2" alt="Tetőtér">
-                    <img src="images/wekerle-elado-lakas4.jpg" class="img-fluid rounded mb-2" alt="Nappali">
+                    <img src="images/wekerle-elado-lakas2.jpg" class="img-fluid rounded mb-2" alt="Nappali" loading="lazy">
+                    <img src="images/wekerle-elado-lakas3.jpg" class="img-fluid rounded mb-2" alt="Tetőtér" loading="lazy">
+                    <img src="images/wekerle-elado-lakas4.jpg" class="img-fluid rounded mb-2" alt="Nappali" loading="lazy">
                 </div>
             </noscript>
         </div>
         <aside class="col-md-4">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Kapcsolat</h5>
-                    <p id="phone">Telefon: <a href="tel:+36308243645">+36 30 824 3645</a></p>
-                </div>
-            </div>
-            <div class="card mt-3">
-                <div class="card-body">
-                    <a class="btn btn-info w-100" href="https://ingatlan.com/35215594" target="_blank">További információk</a>
-                </div>
-            </div>
+          <noscript>
+<style>#kapcsolat-section { display: none !important; }</style>
+</noscript>
+<div id="kapcsolat-section">
+  <div class="card">
+    <div class="card-body">
+      <h5 class="card-title">Kapcsolat</h5>
+      <p id="phone">Telefon: <span id="phone-number"></span></p>
+    </div>
+  </div>
+</div>
+<div class="card mt-3">
+  <div class="card-body">
+    <a class="btn btn-info w-100" href="https://ingatlan.com/35215594" target="_blank">További információk</a>
+  </div>
+</div>
         </aside>
     </div>
 </main>
@@ -125,5 +136,16 @@
     <div class="container text-center small">2026</div>
 </footer>
 <script src="js/bootstrap.bundle.min.js"></script>
+<script>
+// Obfuscate phone number for bots
+(function() {
+  var parts = ['+36', ' ', '30', ' ', '824', ' ', '3645'];
+  var number = parts.join('');
+  var link = document.createElement('a');
+  link.href = 'tel:' + number.replace(/\s/g, '');
+  link.textContent = number;
+  document.getElementById('phone-number').appendChild(link);
+})();
+</script>
 </body>
 </html>
