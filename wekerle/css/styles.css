@@ -1,0 +1,79 @@
+body {
+    background: #f5fafa;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, "Liberation Sans", sans-serif;
+}
+header.py-5 {
+    background: #263d2f !important;
+    color: #f5fafa !important;
+}
+header h1, header p {
+    color: #f5fafa !important;
+}
+.card {
+    background: #f5fafa;
+    box-shadow: 0 2px 8px rgba(38,61,47,0.08);
+    border: 1px solid #cadbdb;
+}
+.btn-info {
+    background: #869077 !important;
+    color: #f5fafa !important;
+    border: none;
+}
+.btn-info:hover {
+    background: #576652 !important;
+    color: #f5fafa !important;
+}
+a, a:visited {
+    color: #576652;
+    text-decoration: underline;
+}
+a:hover, a:focus {
+    color: #263d2f;
+    text-decoration: none;
+}
+footer.py-3 {
+    background: #263d2f !important;
+    color: #cadbdb !important;
+}
+.carousel-inner img {
+    border-radius: 0.5rem;
+    border: 2px solid #a8b7ae;
+}
+.card-title, h3 {
+    color: #222;
+}
+.card-body {
+    color: #222;
+}
+ul li {
+    color: #222;
+}
+@media (max-width: 767px) {
+    header.py-5 {
+        padding: 2rem 0 !important;
+    }
+    h1.display-6 {
+        font-size: 1.5rem;
+    }
+    .lead {
+        font-size: 1rem;
+    }
+    main.container {
+        padding: 0 0.5rem;
+    }
+    .card {
+        margin-bottom: 1rem;
+    }
+    .carousel-inner img {
+        height: auto;
+        max-height: 250px;
+        object-fit: cover;
+    }
+    .row {
+        flex-direction: column;
+    }
+    .col-md-8, .col-md-4 {
+        max-width: 100%;
+        flex: 0 0 100%;
+    }
+}
