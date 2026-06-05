@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Index of study documents in the wz folder.">
+  <title>wz index</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f172a;
+      --panel: #111827;
+      --card: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --accent-2: #34d399;
+      --border: rgba(255,255,255,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      background: linear-gradient(180deg, #020617, #0f172a 35%, #111827 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    header {
+      padding: 24px;
+      background: rgba(17, 24, 39, .85);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      backdrop-filter: blur(8px);
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(2rem, 5vw, 3rem);
+    }
+    p { margin: 0 0 12px; color: var(--muted); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    a.button,
+    .file a {
+      color: var(--text);
+      text-decoration: none;
+    }
+    a.button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(96, 165, 250, .16);
+      border: 1px solid rgba(96, 165, 250, .35);
+    }
+    a.button:hover,
+    .file a:hover { color: #fff; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .file {
+      background: rgba(31, 41, 55, .85);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+    }
+    .file h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      word-break: break-word;
+    }
+    .meta {
+      display: inline-block;
+      margin-bottom: 12px;
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--accent-2);
+    }
+    .summary {
+      margin: 0 0 14px;
+      color: #d1d5db;
+    }
+    .file a {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      color: var(--accent);
+      word-break: break-word;
+    }
+    footer {
+      margin-top: 26px;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+    code {
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255,255,255,.08);
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+
+    <section class="grid" aria-label="Documents in wz folder">
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./fastConfig.pdf" target="_blank">fastConfig.pdf</a></h2>
+        <p class="summary">Quick copy-paste guide for a lab/exam setup, focused on Filebeat → Logstash → OpenSearch and grok parsing steps.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./filebeat_logstash_grok_osszefoglaló.pdf" target="_blank">filebeat_logstash_grok_osszefoglaló.pdf</a></h2>
+        <p class="summary">Overview of Filebeat, Logstash, and Grok: log file paths, pipeline configuration, and date filter usage.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./grokFilter.pdf" target="_blank">grokFilter.pdf</a></h2>
+        <p class="summary">Reference material for the Logstash Grok filter plugin, likely used as documentation support.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./slowConfig.pdf" target="_blank">slowConfig.pdf</a></h2>
+        <p class="summary">A step-by-step, more complete solution guide for the lab exam, covering data ingestion, parsing, dashboards, alerts, and packet analysis.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./socHelper.pdf" target="_blank">socHelper.pdf</a></h2>
+        <p class="summary">SOC helper/reference document with the usual step order, common ports, Filebeat → Logstash → OpenSearch, grok, and alerting topics.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./wazuhManualOld.pdf" target="_blank">wazuhManualOld.pdf</a></h2>
+        <p class="summary">Older Wazuh installation and configuration manual or slide deck, covering the Wazuh indexer, server, dashboard, and agents.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">PDF</span>
+        <h2><a href="./wazuh-teams-integration-guide.pdf" target="_blank">wazuh-teams-integration-guide.pdf</a></h2>
+        <p class="summary">Guide for sending Wazuh alerts to Microsoft Teams using Power Automate Workflows, reflecting the post-2025 supported method.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">DOCX</span>
+        <h2><a href="./SOC%20Engineering%20vizsgafelkeszito.docx" target="_blank">SOC Engineering vizsgafelkeszito.docx</a></h2>
+        <p class="summary">Exam preparation guide for SOC Engineering, focused on the log pipeline, parsing, dashboards, alerts, and log analysis workflow.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">DOCX</span>
+        <h2><a href="./SOC%20Engineering%20vizsga%20exam%20guide.docx" target="_blank">SOC Engineering vizsga exam guide.docx</a></h2>
+        <p class="summary">Compact cheat sheet with the most relevant files, settings, and commands for the exam, including Filebeat and Logstash snippets.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">DOCX</span>
+        <h2><a href="./SOC_ZH_Claude_2.docx" target="_blank">SOC_ZH_Claude_2.docx</a></h2>
+        <p class="summary">Labor ZH solution guide for an open-source SOC setup, with service checks, Filebeat, Logstash grok, OpenSearch, and dashboard steps.</p>
+      </article>
+
+      <article class="file">
+        <span class="meta">DOCX</span>
+        <h2><a href="./Wazuh_Cheat_Sheet.docx" target="_blank">Wazuh_Cheat_Sheet.docx</a></h2>
+        <p class="summary">Cheat sheet for Filebeat, Logstash, OpenSearch, and Wireshark, including commands, config locations, and troubleshooting tips.</p>
+      </article>
+    </section>
+
+    <footer>
+      Tip: if a file does not open in-browser, use the browser download/open dialog or copy the path from the link target.
+      <br>
+      Folder: <code>/wz</code>
+    </footer>
+  </main>
+</body>
+</html>
+
