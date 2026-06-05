@@ -63,6 +63,21 @@
       background: rgba(96, 165, 250, .16);
       border: 1px solid rgba(96, 165, 250, .35);
     }
+
+    a.docx-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      font-size: .86rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.06);
+      color: var(--muted);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    a.docx-btn:hover { color: var(--text); background: rgba(255,255,255,.05); }
     a.button:hover,
     .file a:hover { color: #fff; }
     .grid {
@@ -76,6 +91,14 @@
       border-radius: 18px;
       padding: 18px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+    }
+
+    .file.highlight {
+      border-color: rgba(96, 165, 250, .18);
+      box-shadow: 0 14px 40px rgba(96,165,250,.04);
+      transform: translateY(-2px);
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+      background-color: rgba(96,165,250,.02);
     }
     .file h2 {
       margin: 0 0 8px;
@@ -119,69 +142,70 @@
 
     <section class="grid" aria-label="Documents in wz folder">
       <article class="file">
-        <span class="meta">PDF</span>
         <h2><a href="./fastConfig.pdf" target="_blank">fastConfig.pdf</a></h2>
         <p class="summary">Quick copy-paste guide for a lab/exam setup, focused on Filebeat → Logstash → OpenSearch and grok parsing steps.</p>
       </article>
 
-      <article class="file">
-        <span class="meta">PDF</span>
+      <article class="file highlight">
         <h2><a href="./filebeat_logstash_grok_osszefoglaló.pdf" target="_blank">filebeat_logstash_grok_osszefoglaló.pdf</a></h2>
         <p class="summary">Overview of Filebeat, Logstash, and Grok: log file paths, pipeline configuration, and date filter usage.</p>
       </article>
 
       <article class="file">
-        <span class="meta">PDF</span>
         <h2><a href="./grokFilter.pdf" target="_blank">grokFilter.pdf</a></h2>
         <p class="summary">Reference material for the Logstash Grok filter plugin, likely used as documentation support.</p>
       </article>
 
       <article class="file">
-        <span class="meta">PDF</span>
         <h2><a href="./slowConfig.pdf" target="_blank">slowConfig.pdf</a></h2>
         <p class="summary">A step-by-step, more complete solution guide for the lab exam, covering data ingestion, parsing, dashboards, alerts, and packet analysis.</p>
       </article>
 
       <article class="file">
-        <span class="meta">PDF</span>
         <h2><a href="./socHelper.pdf" target="_blank">socHelper.pdf</a></h2>
         <p class="summary">SOC helper/reference document with the usual step order, common ports, Filebeat → Logstash → OpenSearch, grok, and alerting topics.</p>
       </article>
 
       <article class="file">
-        <span class="meta">PDF</span>
         <h2><a href="./wazuhManualOld.pdf" target="_blank">wazuhManualOld.pdf</a></h2>
         <p class="summary">Older Wazuh installation and configuration manual or slide deck, covering the Wazuh indexer, server, dashboard, and agents.</p>
       </article>
 
       <article class="file">
-        <span class="meta">PDF</span>
         <h2><a href="./wazuh-teams-integration-guide.pdf" target="_blank">wazuh-teams-integration-guide.pdf</a></h2>
         <p class="summary">Guide for sending Wazuh alerts to Microsoft Teams using Power Automate Workflows, reflecting the post-2025 supported method.</p>
       </article>
 
       <article class="file">
-        <span class="meta">DOCX</span>
-        <h2><a href="./SOC%20Engineering%20vizsgafelkeszito.docx" target="_blank">SOC Engineering vizsgafelkeszito.docx</a></h2>
+        <h2><a href="./SOC%20Engineering%20vizsgafelkeszito.pdf" target="_blank">SOC Engineering vizsgafelkeszito.pdf</a></h2>
         <p class="summary">Exam preparation guide for SOC Engineering, focused on the log pipeline, parsing, dashboards, alerts, and log analysis workflow.</p>
+        <div class="actions">
+          <a class="docx-btn" href="./SOC%20Engineering%20vizsgafelkeszito.docx" target="_blank">(.docx version)</a>
+        </div>
       </article>
 
       <article class="file">
-        <span class="meta">DOCX</span>
-        <h2><a href="./SOC%20Engineering%20vizsga%20exam%20guide.docx" target="_blank">SOC Engineering vizsga exam guide.docx</a></h2>
+        <h2><a href="./SOC%20Engineering%20vizsga%20exam%20guide.pdf" target="_blank">SOC Engineering vizsga exam guide.pdf</a></h2>
         <p class="summary">Compact cheat sheet with the most relevant files, settings, and commands for the exam, including Filebeat and Logstash snippets.</p>
+        <div class="actions">
+          <a class="docx-btn" href="./SOC%20Engineering%20vizsga%20exam%20guide.docx" target="_blank">(.docx version)</a>
+        </div>
       </article>
 
       <article class="file">
-        <span class="meta">DOCX</span>
-        <h2><a href="./SOC_ZH_Claude_2.docx" target="_blank">SOC_ZH_Claude_2.docx</a></h2>
+        <h2><a href="./SOC_ZH_Claude_2.pdf" target="_blank">SOC_ZH_Claude_2.pdf</a></h2>
         <p class="summary">Labor ZH solution guide for an open-source SOC setup, with service checks, Filebeat, Logstash grok, OpenSearch, and dashboard steps.</p>
+        <div class="actions">
+          <a class="docx-btn" href="./SOC_ZH_Claude_2.docx" target="_blank">(.docx version)</a>
+        </div>
       </article>
 
       <article class="file">
-        <span class="meta">DOCX</span>
-        <h2><a href="./Wazuh_Cheat_Sheet.docx" target="_blank">Wazuh_Cheat_Sheet.docx</a></h2>
+        <h2><a href="./Wazuh_Cheat_Sheet.pdf" target="_blank">Wazuh_Cheat_Sheet.pdf</a></h2>
         <p class="summary">Cheat sheet for Filebeat, Logstash, OpenSearch, and Wireshark, including commands, config locations, and troubleshooting tips.</p>
+        <div class="actions">
+          <a class="docx-btn" href="./Wazuh_Cheat_Sheet.docx" target="_blank">(.docx version)</a>
+        </div>
       </article>
     </section>
 
