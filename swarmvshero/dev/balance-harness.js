@@ -63,13 +63,13 @@ window.__DUMB = (g, i) => {
     const guards = g.units.filter(u => u.job === w.id).length;
     if (guards >= (w.owner === 'swarm' ? 2 : 3)) continue;
     const p = { x: w.x + (Math.random()-0.5)*60, y: w.y + (Math.random()-0.5)*60 };
-    const id = affordableAt(g, ['brute','swarmling'], p);
+    const id = affordableAt(g, ['mauler','mite'], p);
     if (id) { g.trySummon(id, p); done = true; break; }
   }
   if (!done) {
     const a = Math.random()*Math.PI*2, r = g.minSpawnRange()+30;
     const p = { x: g.hero.x + Math.cos(a)*r, y: g.hero.y + Math.sin(a)*r };
-    const id = affordableAt(g, ['titan','broodmother','shrieker','lurker','spitter','brute','swarmling'], p);
+    const id = affordableAt(g, ['titan','matriarch','shrieker','burrower','flinger','mauler','mite'], p);
     if (id) g.trySummon(id, p);
   }
   const near = g.units.filter(u => Math.hypot(u.x-g.hero.x, u.y-g.hero.y) < 300).length;
@@ -91,7 +91,7 @@ window.__SMART = (g, i) => {
     if (guards >= (w.owner === 'swarm' ? 2 : 3)) continue;
     if (Math.hypot(g.hero.x-w.x, g.hero.y-w.y) < 300) continue;
     const p = { x: w.x + (Math.random()-0.5)*70, y: w.y + (Math.random()-0.5)*70 };
-    const id = affordableAt(g, ['broodmother','brute','swarmling'], p);
+    const id = affordableAt(g, ['matriarch','mauler','mite'], p);
     if (id) { g.trySummon(id, p); done = true; break; }
   }
   if (!done) {
@@ -100,7 +100,7 @@ window.__SMART = (g, i) => {
     const a = Math.random()*Math.PI*2;
     const r = base === g.hero ? g.minSpawnRange()+25 : 120;
     const p = { x: base.x + Math.cos(a)*r, y: base.y + Math.sin(a)*r };
-    const id = affordableAt(g, ['titan','broodmother','shrieker','lurker','spitter','brute','swarmling'], p);
+    const id = affordableAt(g, ['titan','matriarch','shrieker','burrower','flinger','mauler','mite'], p);
     if (id) g.trySummon(id, p);
   }
   const staged = g.rally ? g.units.filter(u => Math.hypot(u.x-g.rally.x, u.y-g.rally.y) < 170).length : 0;
@@ -125,7 +125,7 @@ window.__STAGE = (g, i) => {
     if (guards >= (w.owner === 'swarm' ? 2 : 3)) continue;
     if (Math.hypot(g.hero.x - w.x, g.hero.y - w.y) < 280) continue;
     const p = { x: w.x + (Math.random()-0.5)*70, y: w.y + (Math.random()-0.5)*70 };
-    const id = affordableAt(g, ['broodmother','brute','swarmling'], p);
+    const id = affordableAt(g, ['matriarch','mauler','mite'], p);
     if (id) { g.trySummon(id, p); done = true; break; }
   }
   if (!done) {
@@ -133,7 +133,7 @@ window.__STAGE = (g, i) => {
     const a = Math.random() * Math.PI * 2;
     const r = base === g.hero ? g.minSpawnRange() + 25 : 110;
     const p = { x: base.x + Math.cos(a)*r, y: base.y + Math.sin(a)*r };
-    const id = affordableAt(g, ['titan','broodmother','shrieker','lurker','spitter','brute','swarmling'], p);
+    const id = affordableAt(g, ['titan','matriarch','shrieker','burrower','flinger','mauler','mite'], p);
     if (id) g.trySummon(id, p);
   }
   const staged = g.rally ? g.units.filter(u => Math.hypot(u.x-g.rally.x, u.y-g.rally.y) < 200).length : 0;

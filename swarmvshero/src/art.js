@@ -451,12 +451,12 @@ export function drawUnit(ctx, u, def, time, lod) {
   ctx.fill();
 
   switch (def.id) {
-    case 'swarmling': drawSwarmling(ctx, u, def, time, lod); break;
-    case 'spitter': drawSpitter(ctx, u, def, time, lod); break;
-    case 'brute': drawBrute(ctx, u, def, time, lod); break;
-    case 'lurker': drawLurker(ctx, u, def, time, lod); break;
+    case 'mite': drawMite(ctx, u, def, time, lod); break;
+    case 'flinger': drawFlinger(ctx, u, def, time, lod); break;
+    case 'mauler': drawMauler(ctx, u, def, time, lod); break;
+    case 'burrower': drawBurrower(ctx, u, def, time, lod); break;
     case 'shrieker': drawShrieker(ctx, u, def, time, lod); break;
-    case 'broodmother': drawBroodmother(ctx, u, def, time, lod); break;
+    case 'matriarch': drawMatriarch(ctx, u, def, time, lod); break;
     default: drawTitan(ctx, u, def, time, lod); break;
   }
 
@@ -494,7 +494,7 @@ function legs(ctx, u, count, spread, length, thickness, color, speed = 1) {
   }
 }
 
-function drawSwarmling(ctx, u, def, time, lod) {
+function drawMite(ctx, u, def, time, lod) {
   const r = def.radius;
   if (lod > 0) legs(ctx, u, 3, r * 0.7, r * 0.95, 1.6, '#43135e', 1);
 
@@ -540,7 +540,7 @@ function drawSwarmling(ctx, u, def, time, lod) {
   ctx.fill();
 }
 
-function drawSpitter(ctx, u, def, time, lod) {
+function drawFlinger(ctx, u, def, time, lod) {
   const r = def.radius;
   const charge = clamp(1 - u.attackTimer / def.attackCooldown, 0, 1);
 
@@ -588,7 +588,7 @@ function drawSpitter(ctx, u, def, time, lod) {
   ctx.fill();
 }
 
-function drawBrute(ctx, u, def, time, lod) {
+function drawMauler(ctx, u, def, time, lod) {
   const r = def.radius;
   const bob = Math.sin(u.gait) * r * 0.06;
 
@@ -807,7 +807,7 @@ function drawTitan(ctx, u, def, time, lod) {
   ctx.restore();
 }
 
-/** A travelling ridge of turned earth: the Lurker while it is underground. */
+/** A travelling ridge of turned earth: the Burrower while it is underground. */
 function drawBurrowMound(ctx, u, def, time) {
   const r = def.radius;
   ctx.save();
@@ -843,7 +843,7 @@ function drawBurrowMound(ctx, u, def, time) {
   ctx.restore();
 }
 
-function drawLurker(ctx, u, def, time, lod) {
+function drawBurrower(ctx, u, def, time, lod) {
   const r = def.radius;
 
   // Digging claws lead the body.
@@ -908,7 +908,7 @@ function drawLurker(ctx, u, def, time, lod) {
   ctx.fill();
 }
 
-function drawBroodmother(ctx, u, def, time, lod) {
+function drawMatriarch(ctx, u, def, time, lod) {
   const r = def.radius;
   // Ready-to-hatch swells the sac; it deflates the moment she lays.
   const ready = clamp(1 - (u.broodTimer ?? 0) / def.attackCooldown, 0, 1);

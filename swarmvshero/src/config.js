@@ -91,9 +91,9 @@ export const PALETTE = {
  * chaff, ranged poke, tank, support debuffer, elite.
  */
 export const UNITS = {
-  swarmling: {
-    id: 'swarmling',
-    name: 'Swarmling',
+  mite: {
+    id: 'mite',
+    name: 'Mite',
     role: 'Cheap chaff. Numbers over quality.',
     hotkey: '1',
     cost: 12,
@@ -108,9 +108,9 @@ export const UNITS = {
     unlockAt: 0,
     color: '#b750f0',
   },
-  spitter: {
-    id: 'spitter',
-    name: 'Spitter',
+  flinger: {
+    id: 'flinger',
+    name: 'Flinger',
     role: 'Ranged acid. Outranges the champion at every tier.',
     hotkey: '2',
     cost: 22,
@@ -127,9 +127,9 @@ export const UNITS = {
     unlockAt: 22,
     color: '#8f5bff',
   },
-  brute: {
-    id: 'brute',
-    name: 'Brute',
+  mauler: {
+    id: 'mauler',
+    name: 'Mauler',
     role: 'Armoured tank. Soaks area damage.',
     hotkey: '3',
     cost: 34,
@@ -145,9 +145,9 @@ export const UNITS = {
     unlockAt: 45,
     color: '#7a2f9c',
   },
-  lurker: {
-    id: 'lurker',
-    name: 'Lurker',
+  burrower: {
+    id: 'burrower',
+    name: 'Burrower',
     role: 'Burrows in untouchable, surfaces with a heavy ambush strike.',
     hotkey: '4',
     cost: 42,
@@ -185,10 +185,10 @@ export const UNITS = {
     unlockAt: 70,
     color: '#5fd3ff',
   },
-  broodmother: {
-    id: 'broodmother',
-    name: 'Broodmother',
-    role: 'Hangs back and hatches free Swarmlings for as long as she lives.',
+  matriarch: {
+    id: 'matriarch',
+    name: 'Matriarch',
+    role: 'Hangs back and hatches free Mites for as long as she lives.',
     hotkey: '6',
     cost: 85,
     maxHp: 120,
@@ -200,7 +200,7 @@ export const UNITS = {
     xpValue: 46,
     behavior: 'brood',
     standoffRange: 340, // keeps this far from the champion
-    broodUnit: 'swarmling',
+    broodUnit: 'mite',
     unlockAt: 88,
     color: '#8e2f6e',
   },
@@ -226,7 +226,7 @@ export const UNITS = {
 };
 
 export const UNIT_ORDER = [
-  'swarmling', 'spitter', 'brute', 'lurker', 'shrieker', 'broodmother', 'titan',
+  'mite', 'flinger', 'mauler', 'burrower', 'shrieker', 'matriarch', 'titan',
 ];
 
 /** Caps on stacking debuffs so a wall of Shriekers cannot fully lock the hero. */

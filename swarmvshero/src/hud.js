@@ -60,7 +60,7 @@ export const HELP_PAGES = [
     body: [
       ['Every death feeds the champion', [
         'The champion evolves on experience, and almost all of it comes from killing',
-        'your units. A constant trickle of Swarmlings does not wear it down — it arms it.',
+        'your units. A constant trickle of Mites does not wear it down — it arms it.',
         'The tier bar under its health is, in effect, a record of your mistakes.',
       ]],
       ['Pressure is the baseline', [
@@ -804,7 +804,7 @@ export class Hud {
       add(`Untouchable while burrowed; surfaces within ${def.surfaceRange} and its first hit deals ${def.ambushMultiplier}x damage`);
     }
     if (def.behavior === 'brood') {
-      add(`Never attacks. Hatches a free Swarmling every ${def.attackCooldown}s and keeps ${def.standoffRange} away from the champion`);
+      add(`Never attacks. Hatches a free Mite every ${def.attackCooldown}s and keeps ${def.standoffRange} away from the champion`);
     }
     if (def.summonCooldown) add(`${def.summonCooldown}s summon cooldown`);
     add('Summon inside a well to garrison it');
@@ -942,7 +942,7 @@ export class Hud {
 
     // A rotating opening prompt that teaches the three verbs, then retires.
     const tips = [
-      { until: 14, text: 'Left-click anywhere to open a rift and summon a Swarmling' },
+      { until: 14, text: 'Left-click anywhere to open a rift and summon a Mite' },
       { until: 30, text: 'Summon inside a glowing well to capture it — more Aether, and the champion loses a place to heal' },
       { until: 48, text: 'Right-click to place a rally beacon: the swarm gathers there instead of trickling in' },
       { until: 66, text: 'Press Space to Frenzy — it releases the staged swarm and buffs it for a few seconds' },
@@ -1192,7 +1192,7 @@ export class Hud {
       if (def.behavior === 'support') {
         detail = `${def.maxHp} HP · aura ${def.auraRadius} · slows and marks the champion`;
       } else if (def.behavior === 'brood') {
-        detail = `${def.maxHp} HP · no attack · hatches a Swarmling every ${def.attackCooldown}s`;
+        detail = `${def.maxHp} HP · no attack · hatches a Mite every ${def.attackCooldown}s`;
       } else if (def.behavior === 'ambush') {
         detail = `${def.maxHp} HP · ${def.damage} damage · ${def.ambushMultiplier}x on the ambush hit · untargetable while burrowed`;
       } else {
@@ -1243,7 +1243,7 @@ export class Hud {
     for (const line of [
       'A red circle or lane on the ground means damage is about to land there.',
       'The bright inner ring filling up is the timer. Move the beacon and your',
-      'swarm walks out of it. Brutes take far less; Spitters and Swarmlings die.',
+      'swarm walks out of it. Maulers take far less; Flingers and Mites die.',
       'Judgment deliberately targets your densest cluster — never blob under it.',
     ]) {
       this.text(ctx, line, x, cursorY, { size: 13, color: PALETTE.ui, maxWidth: w });

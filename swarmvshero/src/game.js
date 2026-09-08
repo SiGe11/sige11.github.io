@@ -75,8 +75,8 @@ export class Game {
     this.upgradeChoices = [];
     this.takenUpgrades = [];
 
-    this.selected = 'swarmling';
-    this.unlocked = new Set(['swarmling']);
+    this.selected = 'mite';
+    this.unlocked = new Set(['mite']);
     this.titanCooldown = 0;
 
     this.rally = null;
@@ -684,7 +684,7 @@ export class Game {
         desired.x += dodge.x * 2.2;
         desired.y += dodge.y * 2.2;
       } else if (def.behavior === 'ranged' && toHero < def.kiteRange && !holding) {
-        // Spitters back away to keep their range advantage.
+        // Flingers back away to keep their range advantage.
         desired.x += (unit.x - this.hero.x) / Math.max(1, toHero) * 1.4;
         desired.y += (unit.y - this.hero.y) / Math.max(1, toHero) * 1.4;
       } else if (def.behavior === 'support' && toHero < def.auraRadius * 0.65 && !holding) {
@@ -777,7 +777,7 @@ export class Game {
         const damage = def.damage * dmgMult * this.linkBonus(unit);
 
         if (def.behavior === 'melee' || def.behavior === 'ambush') {
-          // The first blow after surfacing is the whole point of a Lurker.
+          // The first blow after surfacing is the whole point of a Burrower.
           let blow = damage;
           if (def.behavior === 'ambush' && unit.ambushReady) {
             unit.ambushReady = false;
@@ -941,7 +941,7 @@ export class Game {
     };
   }
 
-  /** Burrowed Lurkers cannot be seen, shot, or caught by an ability. */
+  /** Burrowed Burrowers cannot be seen, shot, or caught by an ability. */
   targetable(unit) {
     return !unit.burrowed;
   }
