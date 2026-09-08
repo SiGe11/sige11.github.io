@@ -139,11 +139,14 @@ export class World {
     this.wells = [];
     this.details = [];
     this.grid = new Map();
+    this.queryStamp = 0;
+    this.queryResult = [];
     this.generate();
   }
 
   cellKey(cx, cy) {
-    return `${cx},${cy}`;
+    // Integer key: cheaper than a template string on a path this hot.
+    return (cx + 4096) * 8192 + (cy + 4096);
   }
 
   addToGrid(obj) {
@@ -164,8 +167,16 @@ export class World {
     }
   }
 
+  /**
+   * Terrain overlapping a circle. Objects span several cells, so a stamp
+   * counter de-duplicates without the O(n^2) `includes` scan this used to do,
+   * and the result array is reused — this runs for every unit, several times
+   * per frame. Callers must finish with the array before querying again.
+   */
   nearbyTerrain(point, reach) {
-    const found = [];
+    this.queryStamp += 1;
+    const found = this.queryResult;
+    found.length = 0;
     const minX = Math.floor((point.x - reach) / CELL);
     const maxX = Math.floor((point.x + reach) / CELL);
     const minY = Math.floor((point.y - reach) / CELL);
@@ -174,7 +185,11 @@ export class World {
       for (let cy = minY; cy <= maxY; cy += 1) {
         const bucket = this.grid.get(this.cellKey(cx, cy));
         if (!bucket) continue;
-        for (const obj of bucket) if (!found.includes(obj)) found.push(obj);
+        for (const obj of bucket) {
+          if (obj.stamp === this.queryStamp) continue;
+          obj.stamp = this.queryStamp;
+          found.push(obj);
+        }
       }
     }
     return found;

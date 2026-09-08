@@ -429,6 +429,11 @@ export function drawUnit(ctx, u, def, time, lod) {
   const r = def.radius;
   const hover = def.hover ? Math.sin(time * 5 + u.seed) * 3 - 6 : 0;
 
+  if (u.burrowed) {
+    drawBurrowMound(ctx, u, def, time);
+    return;
+  }
+
   contactShadow(ctx, u.x + 3, u.y + r * 0.55, r * 0.95, r * 0.42, def.hover ? 0.2 : 0.32);
   drawGlow(ctx, u.x, u.y + hover, r * 2.6, def.color, 0.16);
 
@@ -449,7 +454,9 @@ export function drawUnit(ctx, u, def, time, lod) {
     case 'swarmling': drawSwarmling(ctx, u, def, time, lod); break;
     case 'spitter': drawSpitter(ctx, u, def, time, lod); break;
     case 'brute': drawBrute(ctx, u, def, time, lod); break;
+    case 'lurker': drawLurker(ctx, u, def, time, lod); break;
     case 'shrieker': drawShrieker(ctx, u, def, time, lod); break;
+    case 'broodmother': drawBroodmother(ctx, u, def, time, lod); break;
     default: drawTitan(ctx, u, def, time, lod); break;
   }
 
@@ -798,6 +805,158 @@ function drawTitan(ctx, u, def, time, lod) {
   ctx.globalCompositeOperation = 'source-over';
 
   ctx.restore();
+}
+
+/** A travelling ridge of turned earth: the Lurker while it is underground. */
+function drawBurrowMound(ctx, u, def, time) {
+  const r = def.radius;
+  ctx.save();
+  ctx.translate(u.x, u.y);
+  ctx.rotate(u.facing);
+
+  ctx.fillStyle = 'rgba(24,20,16,0.5)';
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.2, r * 0.2, r * 1.5, r * 0.7, 0, 0, TAU);
+  ctx.fill();
+
+  const g = ctx.createLinearGradient(0, -r * 0.8, 0, r * 0.6);
+  g.addColorStop(0, 'rgba(126,102,78,0.95)');
+  g.addColorStop(1, 'rgba(58,44,32,0.95)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(r * 1.4, 0);
+  ctx.quadraticCurveTo(r * 0.2, -r * 0.85, -r * 1.3, -r * 0.3);
+  ctx.quadraticCurveTo(-r * 1.5, 0, -r * 1.3, r * 0.3);
+  ctx.quadraticCurveTo(r * 0.2, r * 0.85, r * 1.4, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cracks along the ridge, and a hint of the thing inside.
+  ctx.strokeStyle = 'rgba(180,110,240,0.45)';
+  ctx.lineWidth = 1.4;
+  for (let i = -1; i <= 1; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(r * 0.9, i * r * 0.22);
+    ctx.lineTo(-r * 0.5, i * r * 0.42 + Math.sin(time * 6 + u.seed + i) * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLurker(ctx, u, def, time, lod) {
+  const r = def.radius;
+
+  // Digging claws lead the body.
+  if (lod > 0) {
+    ctx.fillStyle = '#5d1a78';
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(r * 0.5, side * r * 0.45);
+      ctx.rotate(side * (0.5 + Math.sin(u.gait * 1.4) * 0.18));
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(r * 1.15, -r * 0.18);
+      ctx.lineTo(r * 1.3, r * 0.06);
+      ctx.lineTo(r * 0.6, r * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    legs(ctx, u, 2, r * 0.6, r * 0.8, 2.2, '#39104d', 1.2);
+  }
+
+  // Segmented, chitinous body tapering to a tail.
+  const g = ctx.createLinearGradient(-r, -r * 0.6, r * 0.5, r * 0.6);
+  g.addColorStop(0, '#2a0a3c');
+  g.addColorStop(0.5, def.color);
+  g.addColorStop(1, '#48156b');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(r * 0.9, 0);
+  ctx.quadraticCurveTo(r * 0.1, -r * 0.8, -r * 0.6, -r * 0.32);
+  ctx.quadraticCurveTo(-r * 1.5, -r * 0.1, -r * 1.6, 0);
+  ctx.quadraticCurveTo(-r * 1.5, r * 0.1, -r * 0.6, r * 0.32);
+  ctx.quadraticCurveTo(r * 0.1, r * 0.8, r * 0.9, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  if (lod > 0) {
+    ctx.strokeStyle = 'rgba(20,6,30,0.55)';
+    ctx.lineWidth = 1.3;
+    for (let i = 0; i < 3; i += 1) {
+      const x = r * 0.35 - i * r * 0.4;
+      ctx.beginPath();
+      ctx.ellipse(x, 0, r * 0.1, r * (0.5 - i * 0.1), 0, -1.2, 1.2);
+      ctx.stroke();
+    }
+  }
+
+  // The ambush strike stays charged until it lands, so show it.
+  if (u.ambushReady) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(236,150,255,${0.35 + Math.sin(time * 9 + u.seed) * 0.2})`;
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.1, 0, r * 0.5, r * 0.32, 0, 0, TAU);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  ctx.fillStyle = '#f0a8ff';
+  ctx.beginPath();
+  ctx.arc(r * 0.55, -r * 0.17, r * 0.12, 0, TAU);
+  ctx.arc(r * 0.55, r * 0.17, r * 0.12, 0, TAU);
+  ctx.fill();
+}
+
+function drawBroodmother(ctx, u, def, time, lod) {
+  const r = def.radius;
+  // Ready-to-hatch swells the sac; it deflates the moment she lays.
+  const ready = clamp(1 - (u.broodTimer ?? 0) / def.attackCooldown, 0, 1);
+  const swell = 1 + ready * 0.12 + Math.sin(time * 2 + u.seed) * 0.02;
+
+  if (lod > 0) legs(ctx, u, 3, r * 0.72, r * 0.7, 2.4, '#3a0f30', 0.5);
+
+  // Egg sac.
+  const sac = ctx.createRadialGradient(-r * 0.4, -r * 0.3, r * 0.1, -r * 0.3, 0, r * 1.1);
+  sac.addColorStop(0, `rgba(255,190,240,${0.5 + ready * 0.4})`);
+  sac.addColorStop(0.45, def.color);
+  sac.addColorStop(1, '#320a28');
+  ctx.fillStyle = sac;
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.32, 0, r * 0.95 * swell, r * 0.85 * swell, 0, 0, TAU);
+  ctx.fill();
+
+  // Eggs visible through the membrane.
+  if (lod > 0) {
+    ctx.fillStyle = `rgba(255,214,250,${0.25 + ready * 0.45})`;
+    for (let i = 0; i < 5; i += 1) {
+      const a = (i / 5) * TAU + u.seed;
+      ctx.beginPath();
+      ctx.arc(-r * 0.32 + Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.36, r * 0.13, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  // Head and mandibles.
+  ctx.fillStyle = '#4a1038';
+  ctx.beginPath();
+  ctx.ellipse(r * 0.62, 0, r * 0.4, r * 0.36, 0, 0, TAU);
+  ctx.fill();
+  if (lod > 0) {
+    ctx.strokeStyle = '#d47ab8';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.9, -r * 0.22);
+    ctx.lineTo(r * 1.2, -r * 0.05);
+    ctx.moveTo(r * 0.9, r * 0.22);
+    ctx.lineTo(r * 1.2, r * 0.05);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#ffc4ec';
+  ctx.beginPath();
+  ctx.arc(r * 0.7, -r * 0.15, r * 0.1, 0, TAU);
+  ctx.arc(r * 0.7, r * 0.15, r * 0.1, 0, TAU);
+  ctx.fill();
 }
 
 // ----------------------------------------------------------------------- hero

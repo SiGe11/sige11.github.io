@@ -7,6 +7,14 @@ import { drawUnit } from './art.js';
 
 const TAU = Math.PI * 2;
 
+const BEHAVIOUR_LABEL = {
+  melee: 'melee',
+  ranged: 'ranged',
+  support: 'support',
+  ambush: 'ambush',
+  brood: 'breeder',
+};
+
 function roundRect(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
@@ -39,10 +47,10 @@ export const HELP_PAGES = [
       ]],
       ['Controls', [
         'Left-click        summon the selected unit there (a rift opens first)',
-        '1 - 5             select a unit; pressing it also summons at the cursor',
+        '1 - 7             select a unit; pressing it also summons at the cursor',
         'Right-click       place a rally beacon — the swarm gathers and waits',
         'Q                 clear the rally beacon',
-        'Space             Frenzy: buff the swarm and release everything',
+        'Space             Frenzy: release the swarm, buffed and ability-resistant',
         'Mouse wheel       zoom    ·    Esc pause    ·    M mute    ·    H this guide',
       ]],
     ],
@@ -55,18 +63,25 @@ export const HELP_PAGES = [
         'your units. A constant trickle of Swarmlings does not wear it down — it arms it.',
         'The tier bar under its health is, in effect, a record of your mistakes.',
       ]],
-      ['So mass, then commit', [
-        '1. Right-click somewhere the champion is not. That is your staging ground.',
-        '2. Summon there. Units walk to the beacon and wait instead of charging in.',
-        '3. Wait for the champion to burn an ability — the icon under its name shows',
-        '   which one, and a red circle appears on the ground when it casts.',
-        '4. Press Space. Frenzy clears the beacon and sends everything at once,',
-        '   faster and hitting harder for a few seconds.',
+      ['Pressure is the baseline', [
+        'Keep units on the champion and wells under you. An idle swarm is wasted',
+        'damage, and the champion gains experience just by existing — standing off',
+        'and hoarding an army loses more often than it wins.',
       ]],
-      ['Why it works', [
-        'The champion can only cleave what is in front of it. Ten units arriving one at',
-        'a time die one at a time; thirty arriving together get several seconds of free',
-        'damage before its abilities come back up.',
+      ['The beacon is a steering wheel, not a car park', [
+        'Right-click sets a rally point and the swarm gathers there instead of',
+        'charging. Use it to react, not to hoard:',
+        '\u2022 pull the swarm out of a telegraphed ability, then send them back in',
+        '\u2022 regroup survivors after a wipe so they arrive together, not in ones',
+        '\u2022 pin a push on one flank while the champion is busy on the other',
+        'Set it near the fight. A beacon across the map just means a long walk.',
+      ]],
+      ['Frenzy is your commit button', [
+        'Space clears the beacon, releases every garrison, and for a few seconds',
+        'the swarm moves faster, hits harder, and takes half damage from the',
+        'champion\'s abilities. That last part is the point: it is the one window',
+        'where a packed swarm can stand inside a Shockwave and keep swinging.',
+        'Save it for when you actually have bodies on the field.',
       ]],
     ],
   },
@@ -210,19 +225,26 @@ export class Hud {
 
   // ------------------------------------------------------------------ layout
 
-  /** Card strip scales down on narrow windows instead of running off-screen. */
+  /**
+   * Card strip scales down on narrow windows instead of running off-screen.
+   * With seven units a fixed minimum width overflowed small viewports, so the
+   * gap, the Frenzy button and the card content all shrink together, and
+   * `compact` tells the card renderer to drop its secondary labels.
+   */
   actionBarLayout() {
     const g = this.game;
     const count = UNIT_ORDER.length;
-    const gap = 8;
-    const frenzyW = 92;
-    const available = g.width - 32 - frenzyW - gap;
-    const cardW = clamp((available - (count - 1) * gap) / count, 84, 124);
-    const cardH = 70;
+    const tight = g.width < 940;
+    const margin = tight ? 10 : 16;
+    const gap = tight ? 5 : 8;
+    const frenzyW = tight ? 72 : 92;
+    const available = g.width - margin * 2 - frenzyW - gap;
+    const cardW = clamp((available - (count - 1) * gap) / count, 52, 124);
+    const cardH = tight ? 60 : 70;
     const totalW = count * cardW + (count - 1) * gap + gap + frenzyW;
-    const startX = (g.width - totalW) / 2;
-    const y = g.height - cardH - 16;
-    return { cardW, cardH, gap, frenzyW, startX, y, count };
+    const startX = Math.max(margin, (g.width - totalW) / 2);
+    const y = g.height - cardH - (tight ? 10 : 16);
+    return { cardW, cardH, gap, frenzyW, startX, y, count, compact: cardW < 104 };
   }
 
   unitCardRects() {
@@ -244,6 +266,35 @@ export class Hud {
       w: L.frenzyW,
       h: L.cardH,
     };
+  }
+
+  /** Top-left resource panel; narrows on small viewports. */
+  resourcePanelRect() {
+    const g = this.game;
+    const compact = g.width < 940;
+    return { x: 16, y: 16, w: compact ? 176 : 232, h: compact ? 96 : 88, compact };
+  }
+
+  feedRect() {
+    const g = this.game;
+    const w = clamp(g.width * 0.24, 132, 320);
+    return { x: g.width - w - 16, y: 56, w };
+  }
+
+  /**
+   * The champion panel sits between the resource readout and the event feed,
+   * so its width has to be derived from theirs — a fixed 440 overlapped both
+   * on narrow windows.
+   */
+  heroPanelRect(extraRows = 0) {
+    const g = this.game;
+    const res = this.resourcePanelRect();
+    const feed = this.feedRect();
+    const left = res.x + res.w + 14;
+    const right = feed.x - 14;
+    const w = clamp(Math.min(440, right - left), 230, 440);
+    const x = clamp((g.width - w) / 2, left, Math.max(left, right - w));
+    return { x, y: 14, w, h: 78 + extraRows };
   }
 
   helpButtonRect() {
@@ -299,6 +350,14 @@ export class Hud {
       w: tabW - 6,
       h: 30,
     }));
+  }
+
+  /** True when a screen point sits on any interactive HUD widget. */
+  pointerOverUi(p) {
+    if (this.hit(this.frenzyRect(), p)) return true;
+    if (this.hit(this.minimapRect(), p)) return true;
+    if (this.hit(this.helpButtonRect(), p)) return true;
+    return this.unitCardRects().some((rect) => this.hit(rect, p));
   }
 
   hit(rect, p) {
@@ -471,10 +530,7 @@ export class Hud {
 
   drawResourcePanel(ctx) {
     const g = this.game;
-    const x = 16;
-    const y = 16;
-    const w = 232;
-    const h = 88;
+    const { x, y, w, h, compact } = this.resourcePanelRect();
     this.panel(ctx, x, y, w, h);
 
     // Aether gem icon.
@@ -495,23 +551,45 @@ export class Hud {
     ctx.restore();
 
     const income = `+${g.incomePerSecond().toFixed(1)}/s`;
-    const incomeW = this.measure(ctx, income, { size: 12 });
-    this.text(ctx, Math.floor(g.aether).toString(), x + 46, y + 37, {
-      size: 25, weight: 700, color: '#f0dcff', maxWidth: w - 62 - incomeW - 10,
+    const incomeSize = compact ? 11 : 12;
+    const incomeW = this.measure(ctx, income, { size: incomeSize });
+    this.text(ctx, Math.floor(g.aether).toString(), x + 46, y + (compact ? 34 : 37), {
+      size: compact ? 22 : 25, weight: 700, color: '#f0dcff', maxWidth: w - 62 - incomeW - 8,
     });
-    this.text(ctx, income, x + w - 14, y + 35, { size: 12, color: PALETTE.uiDim, align: 'right' });
+    this.text(ctx, income, x + w - 12, y + (compact ? 32 : 35), {
+      size: incomeSize, color: PALETTE.uiDim, align: 'right',
+    });
 
     const wells = g.heldWells();
     const clock = `${Math.floor(g.time / 60)}:${String(Math.floor(g.time % 60)).padStart(2, '0')}`;
-    this.text(ctx, `Wells ${wells}/${g.world.wells.length}`, x + 14, y + 60, { size: 12, color: wells > 0 ? PALETTE.good : PALETTE.uiDim });
-    this.text(ctx, `Swarm ${g.units.length}/${CONFIG.maxUnits}`, x + 14, y + 78, { size: 12, color: PALETTE.uiDim });
-    this.text(ctx, clock, x + w - 14, y + 78, { size: 12, color: PALETTE.uiDim, align: 'right' });
+    const rowSize = compact ? 11 : 12;
+    this.text(ctx, `Wells ${wells}/${g.world.wells.length}`, x + 12, y + (compact ? 54 : 60), {
+      size: rowSize, color: wells > 0 ? PALETTE.good : PALETTE.uiDim,
+    });
+    this.text(ctx, `Swarm ${g.units.length}/${CONFIG.maxUnits}`, x + 12, y + (compact ? 70 : 78), {
+      size: rowSize, color: PALETTE.uiDim,
+    });
+    this.text(ctx, clock, x + w - 12, y + (compact ? 70 : 78), {
+      size: rowSize, color: PALETTE.uiDim, align: 'right',
+    });
 
     // Progress toward the next mutation offer.
-    const span = g.nextUpgradeAt - (g.nextUpgradeAt - CONFIG.aetherPerUpgrade * (1 + g.takenUpgrades.length * 0.22));
-    const frac = clamp(1 - (g.nextUpgradeAt - g.earned) / Math.max(1, span), 0, 1);
-    this.bar(ctx, x + 132, y + 70, w - 146, 5, frac, '#7a45b8', { light: '#c07bf0' });
-    this.text(ctx, 'Mutation', x + 132, y + 62, { size: 10, color: PALETTE.uiDim });
+    const taken = g.takenUpgrades.length;
+    const maxed = taken >= CONFIG.maxUpgradesPerRun;
+    const span = CONFIG.aetherPerUpgrade * CONFIG.upgradeCostGrowth ** taken;
+    const frac = maxed ? 1 : clamp(1 - (g.nextUpgradeAt - g.earned) / Math.max(1, span), 0, 1);
+    // Compact mode gives the mutation meter its own row; squeezing it beside
+    // the clock made the two labels collide.
+    const label = maxed ? 'Mutations maxed' : `Mutation ${taken + 1}/${CONFIG.maxUpgradesPerRun}`;
+    if (compact) {
+      const labelW = this.measure(ctx, label, { size: 10 });
+      this.text(ctx, label, x + 12, y + 88, { size: 10, color: PALETTE.uiDim });
+      const barX = x + 12 + labelW + 8;
+      this.bar(ctx, barX, y + 82, Math.max(12, x + w - 12 - barX), 5, frac, '#7a45b8', { light: '#c07bf0' });
+    } else {
+      this.bar(ctx, x + 132, y + 70, w - 146, 5, frac, '#7a45b8', { light: '#c07bf0' });
+      this.text(ctx, label, x + 132, y + 62, { size: 10, color: PALETTE.uiDim, maxWidth: w - 146 });
+    }
   }
 
   drawHeroPanel(ctx) {
@@ -526,11 +604,10 @@ export class Hud {
     }
     if (g.hero.poison > 0) statuses.push({ text: `Poison ${g.hero.poison.toFixed(0)}`, color: '#9dff7a' });
     if (g.hero.state === 'retreat') statuses.push({ text: 'Retreating to a well', color: '#ffc98a' });
+    if (g.hero.state === 'reclaim') statuses.push({ text: 'Purging your wells', color: '#ff9a7a' });
 
-    const w = Math.min(440, g.width - 300);
-    const x = (g.width - w) / 2;
-    const y = 14;
-    const h = 78 + (finalStage ? 20 : 0) + (statuses.length ? 20 : 0);
+    const rect = this.heroPanelRect((finalStage ? 20 : 0) + (statuses.length ? 20 : 0));
+    const { x, y, w, h } = rect;
     this.panel(ctx, x, y, w, h, { stroke: 'rgba(255,210,140,0.28)' });
 
     const meta = `${g.heroClass.name} · tier ${g.hero.stage + 1}/${HERO_STAGES.length}`;
@@ -598,9 +675,7 @@ export class Hud {
   drawFeed(ctx) {
     const g = this.game;
     if (!g.feed.length) return;
-    const w = Math.min(320, g.width * 0.26);
-    const x = g.width - w - 16;
-    const y = 56;
+    const { x, y, w } = this.feedRect();
     ctx.save();
     for (let i = 0; i < g.feed.length; i += 1) {
       const entry = g.feed[i];
@@ -615,6 +690,7 @@ export class Hud {
   drawUnitCards(ctx) {
     const g = this.game;
     const rects = this.unitCardRects();
+    const { compact } = this.actionBarLayout();
     this.hoverCard = null;
 
     for (const rect of rects) {
@@ -637,13 +713,16 @@ export class Hud {
       if (!unlocked || (!affordable && !onCooldown)) ctx.globalAlpha = 0.42;
 
       // Name gets the full card width; the portrait sits on the row below.
-      this.text(ctx, def.name, rect.x + 10, rect.y + 19, {
-        size: 12, weight: 700, maxWidth: rect.w - 30,
+      const nameSize = compact ? 10.5 : 12;
+      this.text(ctx, def.name, rect.x + (compact ? 6 : 10), rect.y + (compact ? 16 : 19), {
+        size: nameSize, weight: 700, maxWidth: rect.w - (compact ? 18 : 30),
       });
 
+      const portraitX = rect.x + (compact ? 17 : 24);
+      const portraitY = rect.y + (compact ? 40 : 46);
       ctx.save();
-      ctx.translate(rect.x + 24, rect.y + 46);
-      const scale = Math.min(1.05, 17 / def.radius);
+      ctx.translate(portraitX, portraitY);
+      const scale = Math.min(compact ? 0.8 : 1.05, (compact ? 13 : 17) / def.radius);
       ctx.scale(scale, scale);
       drawUnit(ctx, {
         x: 0, y: 0, facing: -0.35, gait: g.time * 4 + def.cost,
@@ -651,22 +730,25 @@ export class Hud {
       }, def, g.time, 1);
       ctx.restore();
 
-      const textX = rect.x + 46;
-      const textW = rect.x + rect.w - 8 - textX;
-      this.text(ctx, `${cost}`, textX, rect.y + 45, {
-        size: 15, weight: 700, color: affordable ? '#e2b6ff' : '#ff8fa0',
+      const textX = portraitX + (compact ? 15 : 22);
+      const textW = rect.x + rect.w - 6 - textX;
+      this.text(ctx, `${cost}`, textX, portraitY + (compact ? 4 : -1), {
+        size: compact ? 13 : 15, weight: 700, color: affordable ? '#e2b6ff' : '#ff8fa0',
+        maxWidth: textW,
       });
-      const costW = this.measure(ctx, `${cost}`, { size: 15, weight: 700 });
-      this.text(ctx, 'Aether', textX + costW + 4, rect.y + 45, {
-        size: 10, color: PALETTE.uiDim, maxWidth: textW - costW - 4,
-      });
-      this.text(ctx, def.behavior === 'support' ? 'support' : def.behavior,
-        textX, rect.y + 60, { size: 9.5, color: 'rgba(157,149,184,0.8)', maxWidth: textW });
+      if (!compact) {
+        const costW = this.measure(ctx, `${cost}`, { size: 15, weight: 700 });
+        this.text(ctx, 'Aether', textX + costW + 4, rect.y + 45, {
+          size: 10, color: PALETTE.uiDim, maxWidth: textW - costW - 4,
+        });
+        this.text(ctx, BEHAVIOUR_LABEL[def.behavior] ?? def.behavior,
+          textX, rect.y + 60, { size: 9.5, color: 'rgba(157,149,184,0.8)', maxWidth: textW });
+      }
       ctx.restore();
 
       // Hotkey chip.
-      this.text(ctx, def.hotkey, rect.x + rect.w - 8, rect.y + 19, {
-        size: 11, weight: 700, align: 'right', color: PALETTE.uiDim,
+      this.text(ctx, def.hotkey, rect.x + rect.w - (compact ? 5 : 8), rect.y + (compact ? 16 : 19), {
+        size: compact ? 10 : 11, weight: 700, align: 'right', color: PALETTE.uiDim,
       });
 
       if (!unlocked) {
@@ -677,10 +759,10 @@ export class Hud {
         ctx.restore();
         this.text(ctx, `${Math.ceil(Math.max(0, def.unlockAt - g.time))}s`,
           rect.x + rect.w / 2, rect.y + rect.h / 2 + 2, {
-            size: 16, weight: 700, align: 'center', color: '#cbb9e8',
+            size: compact ? 14 : 16, weight: 700, align: 'center', color: '#cbb9e8',
           });
-        this.text(ctx, 'locked', rect.x + rect.w / 2, rect.y + rect.h / 2 + 18, {
-          size: 10, align: 'center', color: PALETTE.uiDim,
+        this.text(ctx, 'locked', rect.x + rect.w / 2, rect.y + rect.h / 2 + (compact ? 16 : 18), {
+          size: compact ? 9 : 10, align: 'center', color: PALETTE.uiDim,
         });
       } else if (onCooldown) {
         ctx.save();
@@ -711,11 +793,19 @@ export class Hud {
       for (const line of this.wrap(ctx, text, w - pad * 2, { size: 11.5 })) lines.push({ text: line, dim });
     };
     add(def.role);
-    add(`${Math.round(def.maxHp * g.mods.hpMult)} HP · ${Math.round(def.damage * g.mods.damageMult)} damage · ${Math.round(def.speed * g.mods.speedMult)} speed`, false);
-    add(def.behavior === 'support' ? `Aura ${def.auraRadius}` : `Range ${def.attackRange}`);
+    const dmg = def.damage > 0 ? `${Math.round(def.damage * g.mods.damageMult)} damage · ` : '';
+    add(`${Math.round(def.maxHp * g.mods.hpMult)} HP · ${dmg}${Math.round(def.speed * g.mods.speedMult)} speed`, false);
+    if (def.behavior === 'support') add(`Aura ${def.auraRadius}`);
+    else if (def.attackRange > 0) add(`Range ${def.attackRange}`);
     if (def.aoeResist) add(`Takes ${Math.round(def.aoeResist * 100)}% less from champion abilities`);
     if (def.behavior === 'support') add('Slows the champion and marks it for extra damage');
     if (def.behavior === 'ranged') add('Backs away to keep its range advantage');
+    if (def.behavior === 'ambush') {
+      add(`Untouchable while burrowed; surfaces within ${def.surfaceRange} and its first hit deals ${def.ambushMultiplier}x damage`);
+    }
+    if (def.behavior === 'brood') {
+      add(`Never attacks. Hatches a free Swarmling every ${def.attackCooldown}s and keeps ${def.standoffRange} away from the champion`);
+    }
     if (def.summonCooldown) add(`${def.summonCooldown}s summon cooldown`);
     add('Summon inside a well to garrison it');
 
@@ -753,13 +843,15 @@ export class Hud {
       ctx.restore();
     }
 
-    this.text(ctx, 'FRENZY', rect.x + rect.w / 2, rect.y + 28, {
-      size: 13, weight: 800, align: 'center',
+    const compact = rect.w < 84;
+    this.text(ctx, 'FRENZY', rect.x + rect.w / 2, rect.y + (compact ? 25 : 28), {
+      size: compact ? 11 : 13, weight: 800, align: 'center',
       color: active ? '#ffe9ff' : ready ? '#e0b6ff' : PALETTE.uiDim,
+      maxWidth: rect.w - 8,
     });
     const sub = active ? `${g.frenzyTimer.toFixed(1)}s` : ready ? 'Space' : `${Math.ceil(g.frenzyCooldown)}s`;
-    this.text(ctx, sub, rect.x + rect.w / 2, rect.y + 48, {
-      size: 12, align: 'center', color: active ? '#ffd9ff' : PALETTE.uiDim,
+    this.text(ctx, sub, rect.x + rect.w / 2, rect.y + (compact ? 42 : 48), {
+      size: compact ? 10.5 : 12, align: 'center', color: active ? '#ffd9ff' : PALETTE.uiDim,
     });
 
     // Rally status sits just above the action bar.
@@ -1072,6 +1164,12 @@ export class Hud {
 
   drawHelpUnits(ctx, x, y, w) {
     const g = this.game;
+    // Row height follows the space left in the panel, so adding a unit to the
+    // roster cannot push the last entry out of the bottom.
+    const panel = this.helpPanelRect();
+    const available = panel.y + panel.h - 26 - y;
+    const row = clamp(available / UNIT_ORDER.length, 42, 62);
+    const dense = row < 56;
     let cursorY = y;
     for (const id of UNIT_ORDER) {
       const def = UNITS[id];
@@ -1086,15 +1184,28 @@ export class Hud {
       ctx.restore();
 
       const tx = x + 54;
-      this.text(ctx, `${def.name}`, tx, cursorY + 10, { size: 14, weight: 700, color: '#e6cbff' });
+      this.text(ctx, `${def.name}`, tx, cursorY + 10, { size: 13.5, weight: 700, color: '#e6cbff' });
       this.text(ctx, `${def.cost} Aether · unlocks at ${def.unlockAt}s · key ${def.hotkey}`,
         x + w, cursorY + 10, { size: 11.5, align: 'right', color: PALETTE.uiDim });
-      this.text(ctx, def.role, tx, cursorY + 28, { size: 12.5, color: PALETTE.ui, maxWidth: w - 60 });
-      const detail = def.behavior === 'support'
-        ? `${def.maxHp} HP · aura ${def.auraRadius} · slows and marks the champion`
-        : `${def.maxHp} HP · ${def.damage} damage · range ${def.attackRange}${def.aoeResist ? ` · ${Math.round(def.aoeResist * 100)}% ability resist` : ''}`;
-      this.text(ctx, detail, tx, cursorY + 44, { size: 11.5, color: PALETTE.uiDim, maxWidth: w - 60 });
-      cursorY += 62;
+      this.text(ctx, def.role, tx, cursorY + 26, { size: 12, color: PALETTE.ui, maxWidth: w - 60 });
+      let detail;
+      if (def.behavior === 'support') {
+        detail = `${def.maxHp} HP · aura ${def.auraRadius} · slows and marks the champion`;
+      } else if (def.behavior === 'brood') {
+        detail = `${def.maxHp} HP · no attack · hatches a Swarmling every ${def.attackCooldown}s`;
+      } else if (def.behavior === 'ambush') {
+        detail = `${def.maxHp} HP · ${def.damage} damage · ${def.ambushMultiplier}x on the ambush hit · untargetable while burrowed`;
+      } else {
+        detail = `${def.maxHp} HP · ${def.damage} damage · range ${def.attackRange}${def.aoeResist ? ` · ${Math.round(def.aoeResist * 100)}% ability resist` : ''}`;
+      }
+      if (!dense) {
+        this.text(ctx, detail, tx, cursorY + 42, { size: 11.5, color: PALETTE.uiDim, maxWidth: w - 60 });
+      }
+      cursorY += row;
+    }
+    if (dense) {
+      this.text(ctx, 'Hover a unit card in game for its full stat line.',
+        x, panel.y + panel.h - 30, { size: 11.5, color: PALETTE.uiDim });
     }
   }
 

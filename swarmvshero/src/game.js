@@ -91,8 +91,10 @@ export class Game {
     this.heroMods = baseHeroMods();
     this.applyHeroMods(this.heroClass.mods);
     this.heroRelics = [];
+    this.heroStatsCache = null;
+    this.heroDebuffCache = null;
 
-    const stats0 = this.heroStats(0);
+    const stats0 = this.computeHeroStats(0);
     this.hero = {
       x: this.world.width * 0.5,
       y: this.world.height * 0.5,
@@ -112,6 +114,9 @@ export class Game {
       wanderTimer: 0,
       action: null,
       state: 'hunt',
+      reclaimTarget: null,
+      reclaimTimer: 0,
+      reclaimCooldown: 12,
     };
 
     this.ascension = 0;
@@ -121,6 +126,7 @@ export class Game {
     this.camera.x = this.hero.x;
     this.camera.y = this.hero.y;
     this.camera.zoom = CONFIG.zoomDefault;
+    this.refreshHeroCache();
 
     this.log(`Champion: ${this.heroClass.name} — ${this.heroClass.blurb}`, PALETTE.hero);
   }
@@ -198,11 +204,16 @@ export class Game {
       this.sfx.unlock();
       const key = e.key.toLowerCase();
 
-      if (key >= '1' && key <= '5') {
+      if (key >= '1' && key <= '9') {
         const id = UNIT_ORDER[Number(key) - 1];
         if (id && this.unlocked.has(id)) {
           this.selected = id;
-          if (this.phase === 'playing' && !this.helpVisible) this.trySummonAtCursor();
+          // Do not fire a summon into the world if the cursor is parked on the
+          // action bar or the minimap.
+          if (this.phase === 'playing' && !this.helpVisible
+            && !this.hud.pointerOverUi(this.mouse)) {
+            this.trySummonAtCursor();
+          }
         }
         return;
       }
@@ -303,6 +314,7 @@ export class Game {
 
     this.time += dt;
     this.threat = 1 + (this.time / 60) * CONFIG.threatRampPerMinute;
+    this.refreshHeroCache();
 
     this.updateUnlocks();
     this.updateEconomy(dt);
@@ -447,6 +459,9 @@ export class Game {
   }
 
   spawnUnit(id, x, y) {
+    // Rifts open before their unit appears, so several can be in flight at
+    // once; re-check the cap at the moment the creature actually arrives.
+    if (this.units.length >= CONFIG.maxUnits) return;
     const def = UNITS[id];
     const hp = def.maxHp * this.mods.hpMult;
     const unit = {
@@ -464,6 +479,9 @@ export class Game {
       invuln: CONFIG.spawnInvulnTime + this.mods.spawnInvulnBonus,
       spawnScale: 0,
       job: null,
+      burrowed: def.behavior === 'ambush',
+      ambushReady: def.behavior === 'ambush',
+      broodTimer: def.behavior === 'brood' ? def.attackCooldown : 0,
     };
     this.world.resolveCollision(unit, def.radius);
 
@@ -510,7 +528,11 @@ export class Game {
           this.fx.ring(well.x, well.y, well.radius * 1.6, 'rgba(200,120,255,0.9)', { life: 0.8, fill: true });
           this.fx.burst(well.x, well.y, PALETTE.swarmGlow, 26, 150);
         }
-      } else if (well.owner !== 'swarm') {
+      } else if (well.owner === 'swarm') {
+        // Corruption re-seals once the hero walks away, instead of sitting at
+        // whatever fraction the hero managed to chip off before leaving.
+        well.progress = Math.min(1, well.progress + dt * 0.4);
+      } else {
         well.progress = Math.max(0, well.progress - dt * 0.25);
       }
 
@@ -604,6 +626,43 @@ export class Game {
 
       const toHero = dist(unit, this.hero);
 
+      if (def.behavior === 'ambush') {
+        // Surfaces inside its strike range and stays up until it is driven
+        // well clear again, so it cannot flicker in and out of being hittable.
+        if (unit.burrowed && toHero < def.surfaceRange) {
+          unit.burrowed = false;
+          unit.ambushReady = true;
+          this.fx.burst(unit.x, unit.y, '#7a4a2a', 16, 150, { gravity: 260 });
+          this.fx.ring(unit.x, unit.y, def.radius * 3, 'rgba(190,140,255,0.7)', { life: 0.35 });
+        } else if (!unit.burrowed && toHero > def.surfaceRange * 1.5) {
+          unit.burrowed = true;
+          this.fx.burst(unit.x, unit.y, '#6b4326', 12, 110, { gravity: 240 });
+        }
+        if (unit.burrowed && chance(dt * 12)) {
+          this.fx.dust(unit.x, unit.y + def.radius * 0.5, 'rgba(120,96,74,0.55)');
+        }
+      }
+
+      if (def.behavior === 'brood') {
+        unit.broodTimer -= dt;
+        if (unit.broodTimer <= 0 && this.units.length < CONFIG.maxUnits) {
+          unit.broodTimer = def.attackCooldown;
+          const a = rand(0, TAU);
+          const spot = {
+            x: unit.x + Math.cos(a) * (def.radius + 14),
+            y: unit.y + Math.sin(a) * (def.radius + 14),
+          };
+          this.world.clampToArena(spot, 12);
+          if (!this.world.blocked(spot, UNITS[def.broodUnit].radius)) {
+            this.spawnUnit(def.broodUnit, spot.x, spot.y);
+            const hatched = this.units[this.units.length - 1];
+            if (hatched) hatched.job = unit.job; // inherits her garrison duty
+            this.fx.ring(spot.x, spot.y, 26, 'rgba(226,140,255,0.7)', { life: 0.4 });
+            this.sfx.play('spawn');
+          }
+        }
+      }
+
       // Decide where this unit wants to be. Priority: defend a well it was
       // assigned to, then a rally beacon, then hunt the hero.
       let target = this.hero;
@@ -631,10 +690,16 @@ export class Game {
       } else if (def.behavior === 'support' && toHero < def.auraRadius * 0.65 && !holding) {
         desired.x += (unit.x - this.hero.x) / Math.max(1, toHero);
         desired.y += (unit.y - this.hero.y) / Math.max(1, toHero);
+      } else if (def.behavior === 'brood' && toHero < def.standoffRange && !holding) {
+        // She is the investment; she never walks into the fight.
+        desired.x += (unit.x - this.hero.x) / Math.max(1, toHero) * 1.5;
+        desired.y += (unit.y - this.hero.y) / Math.max(1, toHero) * 1.5;
       } else if (!holding) {
         const d = Math.max(1, dist(unit, target));
         const stopAt = target === this.hero
-          ? (def.behavior === 'melee' ? def.attackRange * 0.75 : def.attackRange * 0.85)
+          ? (def.behavior === 'brood' ? def.standoffRange
+            : def.behavior === 'melee' || def.behavior === 'ambush' ? def.attackRange * 0.75
+              : def.attackRange * 0.85)
           : guarded && target === guarded ? guarded.radius * 0.55 : 34;
         if (d > stopAt) {
           desired.x += (target.x - unit.x) / d;
@@ -695,6 +760,7 @@ export class Game {
       }
 
       // Attacking.
+      if (def.behavior === 'brood') continue; // she never attacks
       if (def.behavior === 'support') {
         if (unit.attackTimer <= 0 && toHero < def.auraRadius) {
           unit.attackTimer = def.attackCooldown;
@@ -704,12 +770,22 @@ export class Game {
         continue;
       }
 
+      if (unit.burrowed) continue;
+
       if (toHero <= def.attackRange + heroStats.radius && unit.attackTimer <= 0) {
         unit.attackTimer = def.attackCooldown;
         const damage = def.damage * dmgMult * this.linkBonus(unit);
 
-        if (def.behavior === 'melee') {
-          this.damageHero(damage, unit);
+        if (def.behavior === 'melee' || def.behavior === 'ambush') {
+          // The first blow after surfacing is the whole point of a Lurker.
+          let blow = damage;
+          if (def.behavior === 'ambush' && unit.ambushReady) {
+            unit.ambushReady = false;
+            blow *= def.ambushMultiplier;
+            this.fx.ring(this.hero.x, this.hero.y, 70, 'rgba(226,120,255,0.85)', { life: 0.4, fill: true });
+            this.fx.addShake(0.3);
+          }
+          this.damageHero(blow, unit);
           this.fx.slash(
             unit.x + Math.cos(unit.facing) * def.radius,
             unit.y + Math.sin(unit.facing) * def.radius,
@@ -739,7 +815,7 @@ export class Game {
 
     // Hero body crushes anything it walks over.
     for (const unit of this.units) {
-      if (unit.invuln > 0) continue;
+      if (unit.invuln > 0 || !this.targetable(unit)) continue;
       const def = UNITS[unit.type];
       if (dist(unit, this.hero) < heroStats.radius + def.radius * 0.6) {
         this.damageUnit(unit, 26 * dt * this.threat, { source: 'contact' });
@@ -775,15 +851,24 @@ export class Game {
       this.fx.ring(unit.x, unit.y, 78, 'rgba(190,90,255,0.8)', { life: 0.35, fill: true });
     }
 
-    if (chance(0.07)) this.spawnRelic(unit.x, unit.y);
+    // Relics are permanent multipliers, so a long grind used to hand the
+    // champion dozens of them. Cap what a single run can drop.
+    if (this.heroRelics.length + this.relics.length < CONFIG.maxRelicsPerRun
+      && chance(0.07)) {
+      this.spawnRelic(unit.x, unit.y);
+    }
   }
 
   damageUnit(unit, amount, opts = {}) {
     if (unit.invuln > 0 || unit.hp <= 0) return;
+    if (unit.burrowed && opts.source !== 'self') return;
     const def = UNITS[unit.type];
     let dmg = amount;
     if (opts.source === 'ability') {
-      const resist = clamp((def.aoeResist ?? 0) + this.mods.aoeResist, 0, 0.85);
+      // Frenzy has to survive the champion's answer to a blob, or massing up
+      // and committing is strictly worse than trickling units in forever.
+      const frenzy = this.frenzyTimer > 0 ? CONFIG.frenzyAbilityResist : 0;
+      const resist = clamp((def.aoeResist ?? 0) + this.mods.aoeResist + frenzy, 0, 0.88);
       dmg *= 1 - resist;
     }
     unit.hp -= dmg;
@@ -807,11 +892,11 @@ export class Game {
   }
 
   /** Aggregate slow/mark applied by Shriekers in range, capped. */
-  heroDebuffs() {
+  computeHeroDebuffs() {
     let shriekers = 0;
     const def = UNITS.shrieker;
     for (const u of this.units) {
-      if (u.type !== 'shrieker') continue;
+      if (u.type !== 'shrieker' || u.hp <= 0) continue;
       if (dist2(u, this.hero) < def.auraRadius * def.auraRadius) shriekers += 1;
     }
     return {
@@ -821,7 +906,26 @@ export class Game {
     };
   }
 
+  /**
+   * Hero stats and Shrieker debuffs are read many times per frame — including
+   * once per unit attack — and each recompute walks the whole swarm. Compute
+   * them once per simulation step instead.
+   */
+  refreshHeroCache() {
+    this.heroStatsCache = this.computeHeroStats(this.hero.stage);
+    this.heroDebuffCache = this.computeHeroDebuffs();
+  }
+
   heroStats(stageOverride) {
+    if (stageOverride === undefined && this.heroStatsCache) return this.heroStatsCache;
+    return this.computeHeroStats(stageOverride ?? this.hero.stage);
+  }
+
+  heroDebuffs() {
+    return this.heroDebuffCache ?? this.computeHeroDebuffs();
+  }
+
+  computeHeroStats(stageOverride) {
     const stage = stageOverride ?? this.hero.stage;
     const base = HERO_STAGES[stage];
     const t = this.threat;
@@ -837,10 +941,16 @@ export class Game {
     };
   }
 
+  /** Burrowed Lurkers cannot be seen, shot, or caught by an ability. */
+  targetable(unit) {
+    return !unit.burrowed;
+  }
+
   nearestUnit(from, filter) {
     let best = null;
     let bestD = Infinity;
     for (const u of this.units) {
+      if (!this.targetable(u)) continue;
       if (filter && !filter(u)) continue;
       const d = dist2(from, u);
       if (d < bestD) { bestD = d; best = u; }
@@ -886,6 +996,29 @@ export class Game {
     const hurt = hero.hp < maxHp * CONFIG.heroRetreatHpFraction;
 
     // Pick a state.
+    hero.reclaimCooldown = Math.max(0, hero.reclaimCooldown - dt);
+    hero.reclaimTimer = Math.max(0, hero.reclaimTimer - dt);
+
+    // Break off to purge a corrupted well. Without this the champion happily
+    // starves while the swarm owns the whole map, which is what made holding
+    // wells a one-way trade.
+    const corrupted = this.world.wells.filter((w) => w.owner === 'swarm');
+    if (hero.reclaimTarget
+      && (hero.reclaimTarget.owner !== 'swarm' || hero.reclaimTimer <= 0 || hurt)) {
+      hero.reclaimTarget = null;
+      hero.reclaimCooldown = CONFIG.heroReclaimCooldown;
+    }
+    if (!hero.reclaimTarget && !hurt
+      && corrupted.length >= CONFIG.heroReclaimAtWells
+      && hero.reclaimCooldown <= 0
+      && hero.hp > maxHp * 0.55) {
+      hero.reclaimTarget = corrupted
+        .slice()
+        .sort((a, b) => dist2(hero, a) - dist2(hero, b))[0];
+      hero.reclaimTimer = CONFIG.heroReclaimDuration;
+      this.log('The champion moves to purge a well', PALETTE.danger);
+    }
+
     let refuge = null;
     if (hurt) {
       refuge = this.world.wells
@@ -896,7 +1029,9 @@ export class Game {
     if (hurt && !refuge) {
       refuge = this.world.wells.sort((a, b) => dist2(hero, a) - dist2(hero, b))[0] ?? null;
     }
-    hero.state = hurt && refuge ? 'retreat' : target ? 'hunt' : 'patrol';
+    hero.state = hurt && refuge ? 'retreat'
+      : hero.reclaimTarget ? 'reclaim'
+        : target ? 'hunt' : 'patrol';
 
     const move = { x: 0, y: 0 };
     let kiting = false;
@@ -914,6 +1049,19 @@ export class Game {
         const d2 = Math.max(1, toTarget);
         move.x += (hero.x - target.x) / d2 * 1.1;
         move.y += (hero.y - target.y) / d2 * 1.1;
+      }
+    } else if (hero.state === 'reclaim') {
+      const well = hero.reclaimTarget;
+      const d = Math.max(1, dist(hero, well));
+      if (d > well.radius * 0.35) {
+        move.x += (well.x - hero.x) / d * 1.4;
+        move.y += (well.y - hero.y) / d * 1.4;
+      }
+      // Still swats anything that steps in front of it on the way.
+      if (target && toTarget < range * 0.7) {
+        const dt2 = Math.max(1, toTarget);
+        move.x += (target.x - hero.x) / dt2 * 0.5;
+        move.y += (target.y - hero.y) / dt2 * 0.5;
       }
     } else if (hero.state === 'hunt' && target) {
       if (ranged && this.heroClass.kites && toTarget < range * 0.45) {
@@ -1005,7 +1153,7 @@ export class Game {
         // a single champion simply drowns in bodies.
         const reach = range + stats.radius * 0.6;
         for (const u of this.units) {
-          if (u.invuln > 0) continue;
+          if (u.invuln > 0 || !this.targetable(u)) continue;
           const d = dist(hero, u);
           if (d > reach + UNITS[u.type].radius) continue;
           const spread = Math.abs(Math.atan2(u.y - hero.y, u.x - hero.x) - hero.facing);
@@ -1105,8 +1253,10 @@ export class Game {
     let bestCount = 0;
     const r2 = radius * radius;
     for (const u of this.units) {
+      if (!this.targetable(u)) continue;
       let count = 0;
       for (const other of this.units) {
+        if (!this.targetable(other)) continue;
         if (dist2(u, other) < r2) count += 1;
       }
       if (count > bestCount) { bestCount = count; best = u; }
@@ -1145,7 +1295,7 @@ export class Game {
         life: 0.3, size: 4, color: '#ffe8b0',
       });
       for (const u of this.units) {
-        if (u.dashHit || u.invuln > 0) continue;
+        if (u.dashHit || u.invuln > 0 || !this.targetable(u)) continue;
         if (dist(u, hero) < stats.radius + UNITS[u.type].radius + 6) {
           u.dashHit = true;
           this.damageUnit(u, action.spec.damage * this.threat, { source: 'ability' });
@@ -1171,6 +1321,7 @@ export class Game {
         const radius = action.spec.radius * this.heroMods.aoeRadiusMult;
         this.fx.ring(hero.x, hero.y, radius, 'rgba(255,230,170,0.7)', { life: 0.3, width: 4 });
         for (const u of this.units) {
+          if (!this.targetable(u)) continue;
           if (dist(u, hero) < radius) {
             this.damageUnit(u, action.spec.tickDamage * this.threat, { source: 'ability' });
           }
@@ -1211,6 +1362,7 @@ export class Game {
     this.sfx.play('boom');
 
     for (const u of this.units) {
+      if (!this.targetable(u)) continue;
       const d = dist(u, { x: cx, y: cy });
       if (d < radius) {
         // Falloff rewards clipping the edge instead of standing in the middle.
@@ -1246,12 +1398,12 @@ export class Game {
         }
       } else {
         for (const u of this.units) {
-          if (u.invuln > 0) continue;
+          if (u.invuln > 0 || !this.targetable(u)) continue;
           if (dist(p, u) < p.radius + UNITS[u.type].radius) {
             this.damageUnit(u, p.damage, { source: 'hero' });
             // Small splash: clustering under fire has a cost.
             for (const other of this.units) {
-              if (other === u || other.invuln > 0) continue;
+              if (other === u || other.invuln > 0 || !this.targetable(other)) continue;
               if (dist(other, p) < 46) this.damageUnit(other, p.damage * 0.5, { source: 'hero' });
             }
             this.fx.hit(p.x, p.y, '#ffe9a8', 10, 150);
@@ -1289,6 +1441,7 @@ export class Game {
         r.life = 0;
         this.applyHeroMods(r.relic.mods ?? {});
         this.heroRelics.push(r.relic);
+        this.refreshHeroCache();
         if (r.relic.heal) {
           this.hero.hp = Math.min(this.heroStats().maxHp, this.hero.hp + this.heroStats().maxHp * r.relic.heal);
         }
@@ -1333,6 +1486,9 @@ export class Game {
   onHeroDown() {
     if (this.phase !== 'playing') return;
     this.hero.hp = 0;
+    this.hero.action = null;
+    this.telegraph = null;
+    for (const u of this.units) u.dashHit = false;
     this.phase = 'victory';
     this.endReason = `The ${this.heroStats().name} fell after ${Math.floor(this.time)}s.`;
     this.fx.burst(this.hero.x, this.hero.y, '#ffd9a0', 70, 420, { gravity: 200 });
@@ -1356,9 +1512,10 @@ export class Game {
       const before = this.heroStats();
       const ratio = clamp(this.hero.hp / before.maxHp, 0.15, 1);
       this.hero.stage = next;
-      const after = this.heroStats();
+      const after = this.computeHeroStats(next);
       this.hero.hp = Math.round(after.maxHp * Math.min(1, ratio + 0.25));
       this.hero.abilityTimer = 2;
+      this.refreshHeroCache();
       this.log(`Champion evolved: ${after.name}`, PALETTE.hero);
       this.fx.text(this.hero.x, this.hero.y - 50, after.name.toUpperCase(), '#fff0b8', { size: 22, life: 1.6 });
       this.fx.ring(this.hero.x, this.hero.y, 260, 'rgba(255,236,180,0.9)', { life: 1, width: 6, fill: true });
@@ -1380,12 +1537,14 @@ export class Game {
       }
     }
 
-    // Player upgrade offers. The threshold escalates with every mutation
-    // taken: damage earns Aether, so a flat threshold would let damage buy
-    // more damage and run away exponentially.
-    if (this.earned >= this.nextUpgradeAt) {
+    // Player upgrade offers. Mutations compound and damage earns Aether, so
+    // the cost has to grow geometrically or the two feed each other: a linear
+    // step still let long runs stack forty-plus mutations. A hard cap keeps
+    // the ceiling readable on top of that.
+    if (this.earned >= this.nextUpgradeAt
+      && this.takenUpgrades.length < CONFIG.maxUpgradesPerRun) {
       this.nextUpgradeAt = this.earned
-        + CONFIG.aetherPerUpgrade * (1 + this.takenUpgrades.length * 0.22);
+        + CONFIG.aetherPerUpgrade * CONFIG.upgradeCostGrowth ** this.takenUpgrades.length;
       this.upgradeChoices = this.rollUpgrades();
       if (this.upgradeChoices.length) {
         this.phase = 'upgrade';

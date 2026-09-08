@@ -15,7 +15,7 @@ export const CONFIG = {
   startAether: 60,
   baseIncome: 8,
   incomePerWell: 3,
-  aetherPerHeroDamage: 0.15,
+  aetherPerHeroDamage: 0.1,
 
   maxUnits: 90,
 
@@ -31,7 +31,8 @@ export const CONFIG = {
   frenzyDuration: 7,
   frenzyCooldown: 22,
   frenzySpeedMult: 1.45,
-  frenzyDamageMult: 1.3,
+  frenzyDamageMult: 1.45,
+  frenzyAbilityResist: 0.5, // while frenzied, hero abilities do half damage
 
   // Hero progression
   heroXpPerUnitKill: 0.85, // multiplier on unit.xpValue
@@ -40,6 +41,9 @@ export const CONFIG = {
   ascensionTime: 70, // survive this long at final stage and the player loses
   heroWellHealFraction: 0.032, // of max HP per second, so wells matter at every tier
   heroRetreatHpFraction: 0.42,
+  heroReclaimAtWells: 2,      // corrupted wells before it breaks off to purge one
+  heroReclaimDuration: 26,    // gives up after this long
+  heroReclaimCooldown: 14,
 
   // Threat ramp: slow global pressure so turtling is not free.
   threatRampPerMinute: 0.12,
@@ -50,8 +54,12 @@ export const CONFIG = {
   wellCaptureTime: 4.4,
   wellUnitsToCapture: 2,
 
+  maxRelicsPerRun: 9,
+
   // Upgrades
-  aetherPerUpgrade: 200,
+  aetherPerUpgrade: 190,
+  upgradeCostGrowth: 1.26, // each mutation costs 26% more Aether than the last
+  maxUpgradesPerRun: 16,
 
   // Terrain
   terrainCount: 92,
@@ -137,11 +145,30 @@ export const UNITS = {
     unlockAt: 45,
     color: '#7a2f9c',
   },
+  lurker: {
+    id: 'lurker',
+    name: 'Lurker',
+    role: 'Burrows in untouchable, surfaces with a heavy ambush strike.',
+    hotkey: '4',
+    cost: 42,
+    maxHp: 70,
+    speed: 152,
+    damage: 21,
+    attackRange: 28,
+    attackCooldown: 0.9,
+    radius: 13,
+    xpValue: 32,
+    behavior: 'ambush',
+    surfaceRange: 190, // burrows again beyond this, surfaces inside it
+    ambushMultiplier: 2.5,
+    unlockAt: 58,
+    color: '#a13cc8',
+  },
   shrieker: {
     id: 'shrieker',
     name: 'Shrieker',
     role: 'Support. Slows the hero and marks it for +damage.',
-    hotkey: '4',
+    hotkey: '5',
     cost: 30,
     maxHp: 42,
     speed: 108,
@@ -158,11 +185,30 @@ export const UNITS = {
     unlockAt: 70,
     color: '#5fd3ff',
   },
+  broodmother: {
+    id: 'broodmother',
+    name: 'Broodmother',
+    role: 'Hangs back and hatches free Swarmlings for as long as she lives.',
+    hotkey: '6',
+    cost: 85,
+    maxHp: 120,
+    speed: 64,
+    damage: 0,
+    attackRange: 0,
+    attackCooldown: 6.5, // doubles as the hatch interval
+    radius: 18,
+    xpValue: 46,
+    behavior: 'brood',
+    standoffRange: 340, // keeps this far from the champion
+    broodUnit: 'swarmling',
+    unlockAt: 88,
+    color: '#8e2f6e',
+  },
   titan: {
     id: 'titan',
     name: 'Titan',
     role: 'Elite siege beast. Long cooldown.',
-    hotkey: '5',
+    hotkey: '7',
     cost: 110,
     maxHp: 520,
     speed: 84,
@@ -174,12 +220,14 @@ export const UNITS = {
     behavior: 'melee',
     aoeResist: 0.35,
     summonCooldown: 34,
-    unlockAt: 100,
+    unlockAt: 105,
     color: '#e0447a',
   },
 };
 
-export const UNIT_ORDER = ['swarmling', 'spitter', 'brute', 'shrieker', 'titan'];
+export const UNIT_ORDER = [
+  'swarmling', 'spitter', 'brute', 'lurker', 'shrieker', 'broodmother', 'titan',
+];
 
 /** Caps on stacking debuffs so a wall of Shriekers cannot fully lock the hero. */
 export const DEBUFF_CAPS = { slow: 0.45, mark: 0.35 };
@@ -192,7 +240,7 @@ export const HERO_STAGES = [
   {
     name: 'Scout',
     xpThreshold: 0,
-    maxHp: 1150,
+    maxHp: 1190,
     moveSpeed: 108,
     damage: 26,
     attackRange: 34,
@@ -203,7 +251,7 @@ export const HERO_STAGES = [
   {
     name: 'Sentinel',
     xpThreshold: 260,
-    maxHp: 1850,
+    maxHp: 1915,
     moveSpeed: 122,
     damage: 38,
     attackRange: 40,
@@ -214,7 +262,7 @@ export const HERO_STAGES = [
   {
     name: 'Vanguard',
     xpThreshold: 640,
-    maxHp: 2450,
+    maxHp: 2530,
     moveSpeed: 134,
     damage: 50,
     attackRange: 46,
@@ -225,7 +273,7 @@ export const HERO_STAGES = [
   {
     name: 'Warden',
     xpThreshold: 1160,
-    maxHp: 2900,
+    maxHp: 2995,
     moveSpeed: 146,
     damage: 62,
     attackRange: 52,
@@ -236,7 +284,7 @@ export const HERO_STAGES = [
   {
     name: 'Arbiter',
     xpThreshold: 1840,
-    maxHp: 3700,
+    maxHp: 3830,
     moveSpeed: 156,
     damage: 76,
     attackRange: 58,
@@ -247,7 +295,7 @@ export const HERO_STAGES = [
   {
     name: 'Ascendant',
     xpThreshold: 2700,
-    maxHp: 4650,
+    maxHp: 4815,
     moveSpeed: 168,
     damage: 92,
     attackRange: 66,
@@ -320,7 +368,7 @@ export const HERO_CLASSES = [
     id: 'duelist',
     name: 'Duelist',
     blurb: 'Fast blade, relentless attack speed.',
-    mods: { damageMult: 0.92, moveSpeedMult: 1.14, attackCooldownMult: 0.78 },
+    mods: { damageMult: 0.92, moveSpeedMult: 1.14, attackCooldownMult: 0.85 },
     attackStyle: 'melee',
     weapon: 'sword',
   },
@@ -329,8 +377,8 @@ export const HERO_CLASSES = [
     name: 'Arcanist',
     blurb: 'Ranged bolts and frequent, wider abilities.',
     mods: {
-      hpMult: 0.9,
-      abilityCooldownMult: 0.82,
+      hpMult: 0.98,
+      abilityCooldownMult: 0.86,
       aoeRadiusMult: 1.16,
       attackRangeBonus: 120,
     },
