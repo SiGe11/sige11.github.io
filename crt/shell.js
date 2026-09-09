@@ -8,9 +8,7 @@
 
 import { clip } from './text.js';
 
-const USER = 'sige';
 const CWD = '~';
-const HOME = '/home/sige';
 
 export function createShell(screen, options = {}) {
     const prompt = `${CWD}$ `;
@@ -107,7 +105,7 @@ export function createShell(screen, options = {}) {
 
         dir: (args) => {
             const entries = screen.vfs.list(args.join('').includes('a'));
-            print({ t: ` Directory of ${HOME}`, c: 'crt-dim' }, '');
+            print('');
             for (const e of entries) {
                 print([
                     { t: ' ' + e.date + '   ', c: 'crt-dim' },
@@ -132,13 +130,8 @@ export function createShell(screen, options = {}) {
 
         clear: () => { output.length = 0; },
 
-        pwd: () => print(HOME),
-        whoami: () => print(USER),
         date: () => print(new Date().toString()),
         uname: () => print(`${screen.system} 2.5 viridis i386`),
-
-        site: () => runFile('site.sh'),
-        swarm: () => runFile('swarm.exe'),
 
         exit: () => screen.close(),
     };
@@ -158,10 +151,6 @@ export function createShell(screen, options = {}) {
         ['cat <file>', 'print a text file'],
         ['echo <file|text>', 'print a text file, or the text you typed'],
         ['./<file>', 'run an executable — also run, exec, sh'],
-        ['site', 'draw the site again — same as ./site.sh'],
-        ['swarm', 'launch Swarm vs Hero — same as ./swarm.exe'],
-        ['pwd', 'print the working directory'],
-        ['whoami', 'print the current user'],
         ['date', 'print the date and time'],
         ['uname', 'print the system name and build'],
         ['clear', 'wipe the screen — also cls, Ctrl+L'],

@@ -62,6 +62,10 @@ export const CONFIG = {
   maxDropsOnField: 5,
   dropLifetime: 13,
 
+  // Modal panels swallow input this long after opening, so a held summon key
+  // or an in-flight click cannot pick a card the player has not seen yet.
+  panelInputDelay: 0.45,
+
   // Champion summons (Summoner class)
   allyAetherOnKill: 7,
 

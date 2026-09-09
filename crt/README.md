@@ -41,10 +41,10 @@ Otherwise nothing is injected and no stylesheet is even requested.
 | Esc | leave terminal mode |
 
 **Console** — `help` lists every command it answers to: `ls`, `dir`,
-`cat <file>`, `echo <file\|text>`, `./<file>`, `site`, `swarm`, `pwd`,
-`whoami`, `date`, `uname`, `clear`, `exit`. Tab completes, the up arrow walks
-the history, Ctrl+L clears, and Ctrl+C abandons the line — unless something is
-selected, in which case the browser gets the keystroke and copies it.
+`cat <file>`, `echo <file\|text>`, `./<file>`, `date`, `uname`, `clear`,
+`exit`. Tab completes, the up arrow walks the history, Ctrl+L clears, and
+Ctrl+C abandons the line — unless something is selected, in which case the
+browser gets the keystroke and copies it.
 
 Files in `~`:
 

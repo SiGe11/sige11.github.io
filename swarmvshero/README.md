@@ -123,6 +123,8 @@ python3 -c "import http.server as s; H=type('H',(s.SimpleHTTPRequestHandler,),{'
 | `src/world.js` | Arena generation, terrain, spatial queries. |
 | `src/fx.js` · `src/audio.js` · `src/math.js` | Particles, synthesised sound, helpers. |
 | `dev/balance-harness.js` | Development tool. Never loaded by the game — paste it into the console. |
+| `dev/compat-check.html` | Development tool. Open it in a browser to verify that browser. |
+| `dev/browser-tests/` | Development tool. Playwright + safaridriver cross-browser suite. |
 
 ### Balance harness
 
@@ -138,6 +140,33 @@ window.__suite(window.__SMART, 40)                   // parks the army (bad play
 It reports a win rate, run lengths, per-archetype and per-strain results, and
 any invariant violations — NaN state, runaway multipliers, entities outside the
 world, caps exceeded.
+
+### Browser check
+
+`dev/compat-check.html` boots the real game in whatever browser you open it in,
+feature-detects everything the game uses, simulates 60 seconds of play, and
+renders the HUD at eleven desktop viewport sizes from 800x600 to 3440x1440. It
+prints one verdict line at the top.
+
+Serve the folder and open `http://localhost:8765/dev/compat-check.html` in
+Chrome, Edge, Firefox and Safari. Nothing in it ships with the game.
+
+For the automated version, `dev/browser-tests/` drives Chromium, real Chrome,
+Firefox and WebKit through Playwright, the real Safari through `safaridriver`,
+and compares a 576-point pixel grid of one deterministic scene across all four
+engines. See its README. Last run:
+
+| Engine | Result |
+|---|---|
+| Chromium 153 | 9/9 checks, layout clean at 10 viewports |
+| Google Chrome 152 | 9/9 checks, layout clean at 10 viewports |
+| Firefox 155 | 9/9 checks, layout clean at 10 viewports |
+| WebKit 26.6 | 9/9 checks, layout clean at 10 viewports |
+| Safari 26.6.2 (real) | 8/8 checks, layout clean at 10 viewports |
+
+Rendering is pixel-identical between engines: against Chromium, Chrome differs
+by at most 11/255 on a channel, Firefox by 7, and WebKit by more than 24 at
+exactly one of 576 sample points — an antialiased prop edge.
 
 ## Credits
 

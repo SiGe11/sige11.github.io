@@ -83,6 +83,7 @@ export class Game {
     this.roster = UNIT_SLOTS.map((ids) => (ids.length === 1 ? ids[0] : null));
     this.summonCooldowns = {};
     this.unitChoice = null;
+    this.panelAge = 0;
 
     this.rally = null;
     this.frenzyTimer = 0;
@@ -215,6 +216,11 @@ export class Game {
         const n = Number(key) - 1;
         // While a slot choice is open the digits pick a candidate instead.
         if (this.phase === 'choose') {
+          // A key already held down when the panel opens keeps firing keydown
+          // through auto-repeat, which used to pick a strain before the player
+          // ever saw the screen. Only a fresh press, after a short settling
+          // window, counts.
+          if (e.repeat || this.panelAge < CONFIG.panelInputDelay) return;
           const pickId = this.unitChoice?.options[n];
           if (pickId) this.chooseUnit(pickId);
           return;
@@ -304,14 +310,14 @@ export class Game {
       return;
     }
 
-    if (this.phase === 'upgrade') {
-      this.hud.handleUpgradeClicks();
-      this.updateCamera(dt);
-      return;
-    }
-
-    if (this.phase === 'choose') {
-      this.hud.handleUnitChoiceClicks();
+    // Both modal panels ignore input for a moment after opening. Whatever the
+    // player was doing when the run stopped — holding a summon key, clicking
+    // into the world — must not fall through onto a card they have not read.
+    if (this.phase === 'upgrade' || this.phase === 'choose') {
+      this.panelAge += dt;
+      if (this.panelAge < CONFIG.panelInputDelay) this.clicks.length = 0;
+      else if (this.phase === 'upgrade') this.hud.handleUpgradeClicks();
+      else this.hud.handleUnitChoiceClicks();
       this.updateCamera(dt);
       return;
     }
@@ -388,7 +394,15 @@ export class Game {
   /** Pauses into the two-card strain pick for slot `i`. */
   openUnitChoice(slot) {
     this.unitChoice = { slot, options: UNIT_SLOTS[slot].slice() };
-    this.phase = 'choose';
+    this.openPanel('choose');
+  }
+
+  /** Stops the run on a modal panel with a fresh input-settling window. */
+  openPanel(phase) {
+    this.phase = phase;
+    this.panelAge = 0;
+    this.clicks.length = 0;
+    this.rightClicks.length = 0;
     this.sfx.play('upgrade');
   }
 
@@ -1917,10 +1931,7 @@ export class Game {
       this.nextUpgradeAt = this.earned
         + CONFIG.aetherPerUpgrade * CONFIG.upgradeCostGrowth ** this.takenUpgrades.length;
       this.upgradeChoices = this.rollUpgrades();
-      if (this.upgradeChoices.length) {
-        this.phase = 'upgrade';
-        this.sfx.play('upgrade');
-      }
+      if (this.upgradeChoices.length) this.openPanel('upgrade');
     }
   }
 
@@ -2127,6 +2138,9 @@ export class Game {
     for (const u of this.units) {
       if (!this.visible(u.x, u.y, 60)) continue;
       if (u.hp >= u.maxHp - 0.01) continue;
+      // A bar floating over a burrow mound read as "the champion is hitting
+      // it down there". Nothing can touch a burrowed unit, so show nothing.
+      if (!this.targetable(u)) continue;
       const def = UNITS[u.type];
       this.drawMiniBar(ctx, u.x, u.y - def.radius - 9, def.radius * 2.2, 3, u.hp / u.maxHp, '#6ef2a4');
     }

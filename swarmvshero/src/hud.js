@@ -10,6 +10,9 @@ import { drawUnit } from './art.js';
 
 const TAU = Math.PI * 2;
 
+/** "An Arcanist", "A Templar". */
+const article = (word) => (/^[aeiou]/i.test(word) ? 'An' : 'A');
+
 const BEHAVIOUR_LABEL = {
   melee: 'melee',
   ranged: 'ranged',
@@ -915,9 +918,12 @@ export class Hud {
         size: 15, align: 'center', color: PALETTE.uiDim, maxWidth: g.width - 60,
       });
 
+    const live = clamp(g.panelAge / CONFIG.panelInputDelay, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = 0.25 + live * 0.75;
     for (const card of this.unitChoiceRects()) {
       const def = UNITS[card.id];
-      const hovered = this.hit(card, g.mouse);
+      const hovered = live >= 1 && this.hit(card, g.mouse);
       this.panel(ctx, card.x, card.y, card.w, card.h, {
         fill: hovered ? 'rgba(62,30,92,0.97)' : 'rgba(18,20,32,0.95)',
         stroke: hovered ? 'rgba(230,170,255,0.9)' : 'rgba(160,130,210,0.35)',
@@ -955,6 +961,7 @@ export class Hud {
         size: 10.5, align: 'center', color: PALETTE.uiDim,
       });
     }
+    ctx.restore();
   }
 
   drawUnitTooltip(ctx, id, rects) {
@@ -1190,7 +1197,7 @@ export class Hud {
     this.text(ctx, 'SWARM vs HERO', g.width / 2, y + 56, {
       size: 38, weight: 800, align: 'center', color: '#e8ccff',
     });
-    this.text(ctx, `A ${g.heroClass.name} has entered the rift-lands — ${g.heroClass.blurb}`,
+    this.text(ctx, `${article(g.heroClass.name)} ${g.heroClass.name} has entered the rift-lands — ${g.heroClass.blurb}`,
       g.width / 2, y + 84, { size: 14, align: 'center', color: PALETTE.hero, maxWidth: w - 48 });
 
     const lines = [
@@ -1235,8 +1242,13 @@ export class Hud {
       size: 15, align: 'center', color: PALETTE.uiDim, maxWidth: g.width - 60,
     });
 
+    // Cards fade in across the input-settling window, so "not clickable yet"
+    // is visible rather than surprising.
+    const live = clamp(g.panelAge / CONFIG.panelInputDelay, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = 0.25 + live * 0.75;
     for (const card of this.upgradeCardRects()) {
-      const hovered = this.hit(card, g.mouse);
+      const hovered = live >= 1 && this.hit(card, g.mouse);
       this.panel(ctx, card.x, card.y, card.w, card.h, {
         fill: hovered ? 'rgba(62,30,92,0.97)' : 'rgba(18,20,32,0.95)',
         stroke: hovered ? 'rgba(230,170,255,0.9)' : 'rgba(160,130,210,0.35)',
@@ -1265,6 +1277,7 @@ export class Hud {
         });
       });
     }
+    ctx.restore();
   }
 
   drawEnd(ctx, title, subtitle, color) {

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Swarm vs Hero — browser check</title>
+<link rel="icon" href="data:," />
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 24px; background: #0d1219; color: #e9e2ff;
+    font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9d95b8; margin: 0 0 20px; }
+  #verdict { font-size: 17px; font-weight: 700; padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; }
+  .ok { background: rgba(110,242,164,0.12); color: #6ef2a4; }
+  .bad { background: rgba(255,84,112,0.14); color: #ff8fa0; }
+  .run { background: rgba(180,150,240,0.12); color: #c9a4ff; }
+  table { border-collapse: collapse; width: 100%; max-width: 900px; }
+  td { padding: 5px 10px; border-bottom: 1px solid rgba(180,150,240,0.14); vertical-align: top; }
+  td:first-child { color: #9d95b8; width: 320px; }
+  .p { color: #6ef2a4; } .f { color: #ff8fa0; } .w { color: #ffd489; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #ffd98a; margin: 26px 0 6px; }
+  canvas { display: none; }
+</style>
+</head>
+<body>
+<h1>Swarm vs Hero — browser check</h1>
+<p class="sub" id="ua"></p>
+<div id="verdict" class="run">Running…</div>
+<div id="out"></div>
+<canvas id="probe"></canvas>
+
+<script type="module">
+const out = document.getElementById('out');
+const rows = [];
+let fails = 0;
+let warns = 0;
+
+function section(title) { rows.push(`<h2>${title}</h2><table>`); }
+function end() { rows.push('</table>'); }
+function row(name, pass, detail = '') {
+  if (pass === false) fails += 1;
+  if (pass === 'warn') warns += 1;
+  const cls = pass === true ? 'p' : pass === 'warn' ? 'w' : 'f';
+  const mark = pass === true ? 'pass' : pass === 'warn' ? 'warn' : 'FAIL';
+  rows.push(`<tr><td>${name}</td><td class="${cls}">${mark}</td><td>${detail}</td></tr>`);
+}
+function flush() { out.innerHTML = rows.join(''); }
+
+document.getElementById('ua').textContent =
+  `${navigator.userAgent} · ${window.innerWidth}x${window.innerHeight} @ ${window.devicePixelRatio}x`;
+
+// ---------------------------------------------------------------- features
+const c = document.getElementById('probe');
+const ctx = c.getContext('2d', { alpha: false });
+
+section('Platform features the game relies on');
+row('ES modules', true, 'this script is one');
+row('canvas 2D context', !!ctx);
+row('ctx.ellipse', typeof ctx.ellipse === 'function');
+row('ctx.setLineDash', typeof ctx.setLineDash === 'function');
+row('ctx.createPattern', typeof ctx.createPattern === 'function');
+row("globalCompositeOperation 'lighter'",
+  (() => { ctx.globalCompositeOperation = 'lighter'; const v = ctx.globalCompositeOperation; ctx.globalCompositeOperation = 'source-over'; return v === 'lighter'; })());
+row('ctx.roundRect (optional — arcTo fallback exists)',
+  typeof ctx.roundRect === 'function' ? true : 'warn',
+  typeof ctx.roundRect === 'function' ? '' : 'falls back to arcTo, panels still round');
+row('font shorthand parses', (() => {
+  ctx.font = '10px sans-serif';
+  ctx.font = '600 14px "Segoe UI", system-ui, -apple-system, sans-serif';
+  return ctx.font !== '10px sans-serif';
+})(), ctx.font);
+row('fractional font size', (() => { ctx.font = '600 8.68px sans-serif'; return /8\.68|8\.7|9/.test(ctx.font); })(), ctx.font);
+row('Array.prototype.flat', typeof [].flat === 'function');
+row('optional chaining / nullish', (() => { const o = null; return (o?.x ?? 7) === 7; })());
+row('AudioContext', !!(window.AudioContext || window.webkitAudioContext),
+  window.AudioContext ? 'unprefixed' : window.webkitAudioContext ? 'webkit-prefixed' : 'none — game runs silently');
+row('requestAnimationFrame', typeof requestAnimationFrame === 'function');
+row('KeyboardEvent.repeat', 'repeat' in KeyboardEvent.prototype, 'guards the strain-pick panel');
+end(); flush();
+
+// ------------------------------------------------------------------- boot
+section('Booting the real game');
+let game = null;
+try {
+  const { Game } = await import('../src/game.js');
+  const { Sfx } = await import('../src/audio.js');
+  const canvas = document.createElement('canvas');
+  canvas.id = 'probe-game';
+  canvas.style.display = 'none';
+  document.body.appendChild(canvas);
+  game = new Game(canvas, new Sfx());
+  row('modules load and Game constructs', true, `champion: ${game.heroClass.name}`);
+} catch (e) {
+  row('modules load and Game constructs', false, `${e.name}: ${e.message}`);
+}
+end(); flush();
+
+// ----------------------------------------------------------- simulate
+if (game) {
+  section('Simulating 60 seconds of play');
+  try {
+    game.phase = 'playing';
+    let ticks = 0;
+    for (let i = 0; i < 60 * 60 && game.phase !== 'victory' && game.phase !== 'defeat'; i += 1) {
+      if (game.phase === 'upgrade') { game.panelAge = 9; game.chooseUpgrade(game.upgradeChoices[0]); }
+      if (game.phase === 'choose') { game.panelAge = 9; game.chooseUnit(game.unitChoice.options[0]); }
+      if (i % 20 === 0) {
+        const a = Math.random() * Math.PI * 2;
+        const r = game.minSpawnRange() + 40;
+        const p = { x: game.hero.x + Math.cos(a) * r, y: game.hero.y + Math.sin(a) * r };
+        if (!game.summonBlocker(game.selected, p)) game.trySummon(game.selected, p);
+      }
+      game.update(1 / 60);
+      game.clicks.length = 0;
+      ticks += 1;
+    }
+    row('60s of simulation without throwing', true, `${ticks} frames · ${game.units.length} units alive`);
+    const finite = Number.isFinite(game.hero.hp) && Number.isFinite(game.aether) && Number.isFinite(game.time);
+    row('numeric state stays finite', finite, `hp ${Math.round(game.hero.hp)} · aether ${Math.round(game.aether)}`);
+  } catch (e) {
+    row('60s of simulation without throwing', false, `${e.name}: ${e.message}`);
+  }
+  end(); flush();
+
+  // --------------------------------------------------------- render sizes
+  section('Rendering + HUD layout at desktop viewport sizes');
+  const sizes = [
+    [1280, 720], [1366, 768], [1440, 900], [1536, 864], [1600, 900],
+    [1680, 1050], [1920, 1080], [2560, 1440], [3440, 1440], [1024, 640], [800, 600],
+  ];
+  const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  let renderFail = null;
+  let layoutFail = null;
+  for (const [w, h] of sizes) {
+    game.width = w; game.height = h;
+    game.canvas.width = w; game.canvas.height = h;
+    game.dpr = 1;
+    try {
+      game.render();
+      game.helpVisible = true; game.render(); game.helpVisible = false;
+      game.unitChoice = { slot: 6, options: ['titan', 'bombardier'] };
+      const saved = game.phase; game.phase = 'choose'; game.panelAge = 1;
+      game.render();
+      game.phase = saved; game.unitChoice = null;
+    } catch (e) {
+      renderFail = renderFail ?? `${w}x${h}: ${e.name}: ${e.message}`;
+    }
+    const bar = game.hud.actionBarLayout();
+    const fz = game.hud.frenzyRect();
+    const mini = game.hud.minimapRect();
+    const res = game.hud.resourcePanelRect();
+    const hero = game.hud.heroPanelRect(40);
+    const feed = game.hud.feedRect();
+    const problems = [];
+    if (bar.startX < 8) problems.push('action bar off-screen');
+    if (fz.x + fz.w > w - 8) problems.push('frenzy button overflows');
+    if (mini.x < 8 || mini.y + mini.h > bar.y - 4) problems.push('minimap collides');
+    if (overlap(hero, res)) problems.push('champion panel over resources');
+    if (overlap(hero, { x: feed.x, y: feed.y, w: feed.w, h: 120 })) problems.push('champion panel over feed');
+    if (problems.length) layoutFail = layoutFail ?? `${w}x${h}: ${problems.join(', ')}`;
+  }
+  row(`renders at ${sizes.length} viewport sizes`, !renderFail, renderFail ?? 'game, field guide and strain panel');
+  row('no HUD overlap at any of them', !layoutFail, layoutFail ?? '');
+  end(); flush();
+}
+
+// ---------------------------------------------------------------- verdict
+const v = document.getElementById('verdict');
+if (fails) { v.className = 'bad'; v.textContent = `${fails} failure${fails === 1 ? '' : 's'} — this browser has a problem.`; }
+else if (warns) { v.className = 'ok'; v.textContent = `Everything works (${warns} non-blocking note${warns === 1 ? '' : 's'} below).`; }
+else { v.className = 'ok'; v.textContent = 'Everything works in this browser.'; }
+</script>
+</body>
+</html>
