@@ -5,8 +5,8 @@
 // stronger from every unit it kills, so feeding it chaff is how you lose.
 
 import {
-  CONFIG, PALETTE, UNITS, UNIT_ORDER, DEBUFF_CAPS,
-  HERO_STAGES, HERO_ABILITIES, HERO_CLASSES, HERO_RELICS,
+  CONFIG, PALETTE, UNITS, UNIT_ORDER, UNIT_SLOTS, SLOT_UNLOCK_AT, DEBUFF_CAPS,
+  HERO_STAGES, HERO_ABILITIES, HERO_CLASSES, HERO_RELICS, HERO_BOONS, ALLY,
   SWARM_UPGRADES, baseModifiers, baseHeroMods,
 } from './config.js';
 import {
@@ -18,7 +18,7 @@ import { Fx, randomIchor } from './fx.js';
 import {
   drawGround, drawArenaBorder, drawWell, drawTerrain, drawTerrainShadow,
   drawUnit, drawHero, drawRift, drawTelegraph, drawRally, drawProjectile,
-  drawRelic,
+  drawRelic, drawAlly,
 } from './art.js';
 import { Hud } from './hud.js';
 
@@ -63,6 +63,7 @@ export class Game {
     this.nextId = 1;
 
     this.units = [];
+    this.allies = [];
     this.projectiles = [];
     this.rifts = [];
     this.relics = [];
@@ -77,7 +78,11 @@ export class Game {
 
     this.selected = 'mite';
     this.unlocked = new Set(['mite']);
-    this.titanCooldown = 0;
+    // Slots with a single candidate are settled from the start; paired slots
+    // stay null until the player picks one.
+    this.roster = UNIT_SLOTS.map((ids) => (ids.length === 1 ? ids[0] : null));
+    this.summonCooldowns = {};
+    this.unitChoice = null;
 
     this.rally = null;
     this.frenzyTimer = 0;
@@ -91,6 +96,7 @@ export class Game {
     this.heroMods = baseHeroMods();
     this.applyHeroMods(this.heroClass.mods);
     this.heroRelics = [];
+    this.heroBoons = [];
     this.heroStatsCache = null;
     this.heroDebuffCache = null;
 
@@ -117,6 +123,7 @@ export class Game {
       reclaimTarget: null,
       reclaimTimer: 0,
       reclaimCooldown: 12,
+      summonTimer: this.heroClass.summons ? this.heroClass.summons.firstAt : 0,
     };
 
     this.ascension = 0;
@@ -205,7 +212,14 @@ export class Game {
       const key = e.key.toLowerCase();
 
       if (key >= '1' && key <= '9') {
-        const id = UNIT_ORDER[Number(key) - 1];
+        const n = Number(key) - 1;
+        // While a slot choice is open the digits pick a candidate instead.
+        if (this.phase === 'choose') {
+          const pickId = this.unitChoice?.options[n];
+          if (pickId) this.chooseUnit(pickId);
+          return;
+        }
+        const id = this.roster[n];
         if (id && this.unlocked.has(id)) {
           this.selected = id;
           // Do not fire a summon into the world if the cursor is parked on the
@@ -296,6 +310,12 @@ export class Game {
       return;
     }
 
+    if (this.phase === 'choose') {
+      this.hud.handleUnitChoiceClicks();
+      this.updateCamera(dt);
+      return;
+    }
+
     if (this.phase === 'victory' || this.phase === 'defeat') {
       this.hud.handleEndClicks();
       this.updateCamera(dt);
@@ -314,6 +334,8 @@ export class Game {
 
     this.time += dt;
     this.threat = 1 + (this.time / 60) * CONFIG.threatRampPerMinute;
+    // Boons expire into the stat cache, so they have to tick first.
+    this.updateBoons(dt);
     this.refreshHeroCache();
 
     this.updateUnlocks();
@@ -321,6 +343,7 @@ export class Game {
     this.updateWells(dt);
     this.updateRifts(dt);
     this.updateUnits(dt);
+    this.updateAllies(dt);
     this.updateHero(dt);
     this.updateProjectiles(dt);
     this.updateRelics(dt);
@@ -339,20 +362,50 @@ export class Game {
 
     this.frenzyTimer = Math.max(0, this.frenzyTimer - dt);
     this.frenzyCooldown = Math.max(0, this.frenzyCooldown - dt);
-    this.titanCooldown = Math.max(0, this.titanCooldown - dt);
+    for (const id of Object.keys(this.summonCooldowns)) {
+      this.summonCooldowns[id] = Math.max(0, this.summonCooldowns[id] - dt);
+    }
   }
 
   // -------------------------------------------------------------- economy
 
   updateUnlocks() {
-    for (const id of UNIT_ORDER) {
-      if (this.unlocked.has(id)) continue;
-      if (this.time >= UNITS[id].unlockAt) {
-        this.unlocked.add(id);
-        this.log(`${UNITS[id].name} available — ${UNITS[id].role}`, PALETTE.good);
-        this.sfx.play('upgrade');
+    for (let i = 0; i < UNIT_SLOTS.length; i += 1) {
+      if (this.time < SLOT_UNLOCK_AT[i]) continue;
+      const id = this.roster[i];
+      if (id === null) {
+        // A paired slot came due: stop the run and let the player commit.
+        if (this.phase === 'playing') this.openUnitChoice(i);
+        return;
       }
+      if (this.unlocked.has(id)) continue;
+      this.unlocked.add(id);
+      this.log(`${UNITS[id].name} available — ${UNITS[id].role}`, PALETTE.good);
+      this.sfx.play('upgrade');
     }
+  }
+
+  /** Pauses into the two-card strain pick for slot `i`. */
+  openUnitChoice(slot) {
+    this.unitChoice = { slot, options: UNIT_SLOTS[slot].slice() };
+    this.phase = 'choose';
+    this.sfx.play('upgrade');
+  }
+
+  chooseUnit(id) {
+    const choice = this.unitChoice;
+    if (!choice || !choice.options.includes(id)) return;
+    this.roster[choice.slot] = id;
+    this.unlocked.add(id);
+    this.selected = id;
+    this.unitChoice = null;
+    this.phase = 'playing';
+    this.log(`${UNITS[id].name} joins the swarm — ${UNITS[id].role}`, PALETTE.good);
+    this.sfx.play('evolve');
+  }
+
+  summonCooldown(id) {
+    return this.summonCooldowns[id] ?? 0;
   }
 
   heldWells() {
@@ -390,7 +443,7 @@ export class Game {
     if (!this.unlocked.has(id)) return 'Locked';
     if (this.units.length >= CONFIG.maxUnits) return 'Swarm at capacity';
     if (this.aether < this.unitCost(id)) return 'Not enough Aether';
-    if (id === 'titan' && this.titanCooldown > 0) return `Titan ready in ${Math.ceil(this.titanCooldown)}s`;
+    if (this.summonCooldown(id) > 0) return `${UNITS[id].name} ready in ${Math.ceil(this.summonCooldown(id))}s`;
     if (!this.world.inArena(p, UNITS[id].radius + 8)) return 'Outside the arena';
     if (dist(p, this.hero) < this.minSpawnRange()) return 'Too close to the champion';
     if (this.world.blocked(p, UNITS[id].radius + 4)) return 'Blocked by terrain';
@@ -410,7 +463,7 @@ export class Game {
 
     const def = UNITS[id];
     this.aether -= this.unitCost(id);
-    if (id === 'titan') this.titanCooldown = def.summonCooldown;
+    if (def.summonCooldown) this.summonCooldowns[id] = def.summonCooldown;
 
     this.rifts.push({
       id: this.nextId++,
@@ -427,10 +480,10 @@ export class Game {
 
     this.fx.ring(p.x, p.y, def.radius * 4, 'rgba(200,110,255,0.8)', { life: 0.45 });
     this.fx.burst(p.x, p.y, PALETTE.swarmGlow, 14, 130);
-    this.sfx.play(id === 'titan' ? 'summonTitan' : 'spawn');
-    if (id === 'titan') {
+    this.sfx.play(def.summonCooldown ? 'summonTitan' : 'spawn');
+    if (def.summonCooldown) {
       this.fx.addShake(0.7);
-      this.log('A Titan tears through', '#ff8fb0');
+      this.log(`A ${def.name} tears through`, '#ff8fb0');
     }
     return true;
   }
@@ -482,6 +535,7 @@ export class Game {
       burrowed: def.behavior === 'ambush',
       ambushReady: def.behavior === 'ambush',
       broodTimer: def.behavior === 'brood' ? def.attackCooldown : 0,
+      mendTimer: def.behavior === 'mender' ? def.attackCooldown : 0,
     };
     this.world.resolveCollision(unit, def.radius);
 
@@ -663,6 +717,24 @@ export class Game {
         }
       }
 
+      if (def.behavior === 'mender') {
+        unit.mendTimer -= dt;
+        if (unit.mendTimer <= 0) {
+          unit.mendTimer = def.attackCooldown;
+          let mended = 0;
+          const r2 = def.mendRadius * def.mendRadius;
+          for (const other of this.units) {
+            if (other === unit || other.hp >= other.maxHp) continue;
+            if (dist2(other, unit) > r2) continue;
+            other.hp = Math.min(other.maxHp, other.hp + def.mendPerSecond * def.attackCooldown);
+            mended += 1;
+          }
+          if (mended > 0) {
+            this.fx.ring(unit.x, unit.y, def.mendRadius, 'rgba(96,240,170,0.42)', { life: 0.5, width: 2 });
+          }
+        }
+      }
+
       // Decide where this unit wants to be. Priority: defend a well it was
       // assigned to, then a rally beacon, then hunt the hero.
       let target = this.hero;
@@ -683,21 +755,23 @@ export class Game {
       if (dodge) {
         desired.x += dodge.x * 2.2;
         desired.y += dodge.y * 2.2;
-      } else if (def.behavior === 'ranged' && toHero < def.kiteRange && !holding) {
-        // Flingers back away to keep their range advantage.
+      } else if ((def.behavior === 'ranged' || def.behavior === 'artillery')
+        && toHero < def.kiteRange && !holding) {
+        // Flingers and Bombardiers back away to keep their range advantage.
         desired.x += (unit.x - this.hero.x) / Math.max(1, toHero) * 1.4;
         desired.y += (unit.y - this.hero.y) / Math.max(1, toHero) * 1.4;
       } else if (def.behavior === 'support' && toHero < def.auraRadius * 0.65 && !holding) {
         desired.x += (unit.x - this.hero.x) / Math.max(1, toHero);
         desired.y += (unit.y - this.hero.y) / Math.max(1, toHero);
-      } else if (def.behavior === 'brood' && toHero < def.standoffRange && !holding) {
-        // She is the investment; she never walks into the fight.
+      } else if ((def.behavior === 'brood' || def.behavior === 'mender')
+        && toHero < def.standoffRange && !holding) {
+        // These are the investment; they never walk into the fight.
         desired.x += (unit.x - this.hero.x) / Math.max(1, toHero) * 1.5;
         desired.y += (unit.y - this.hero.y) / Math.max(1, toHero) * 1.5;
       } else if (!holding) {
         const d = Math.max(1, dist(unit, target));
         const stopAt = target === this.hero
-          ? (def.behavior === 'brood' ? def.standoffRange
+          ? (def.behavior === 'brood' || def.behavior === 'mender' ? def.standoffRange
             : def.behavior === 'melee' || def.behavior === 'ambush' ? def.attackRange * 0.75
               : def.attackRange * 0.85)
           : guarded && target === guarded ? guarded.radius * 0.55 : 34;
@@ -760,7 +834,7 @@ export class Game {
       }
 
       // Attacking.
-      if (def.behavior === 'brood') continue; // she never attacks
+      if (def.behavior === 'brood' || def.behavior === 'mender') continue; // neither attacks
       if (def.behavior === 'support') {
         if (unit.attackTimer <= 0 && toHero < def.auraRadius) {
           unit.attackTimer = def.attackCooldown;
@@ -771,6 +845,16 @@ export class Game {
       }
 
       if (unit.burrowed) continue;
+
+      // A wisp that walks into reach is swatted before the champion. The swarm
+      // never chases them — they come to it — so this stays an interrupt, not
+      // a second targeting system.
+      const wisp = this.nearestAlly(unit, def.attackRange + def.radius + 20);
+      if (wisp && unit.attackTimer <= 0 && dist(unit, wisp) < toHero) {
+        unit.attackTimer = def.attackCooldown;
+        this.attackAlly(unit, def, wisp, dmgMult);
+        continue;
+      }
 
       if (toHero <= def.attackRange + heroStats.radius && unit.attackTimer <= 0) {
         unit.attackTimer = def.attackCooldown;
@@ -791,7 +875,9 @@ export class Game {
             unit.y + Math.sin(unit.facing) * def.radius,
             unit.facing, def.radius * 1.6, PALETTE.swarmGlow, { arc: 2.0, width: 5 },
           );
-        } else if (!this.world.lineBlocked(unit, this.hero, 6)) {
+        } else if (def.behavior === 'artillery' || !this.world.lineBlocked(unit, this.hero, 6)) {
+          // A Bombardier lobs its shell, so terrain never blocks the shot.
+          const lob = def.behavior === 'artillery';
           const a = angleTo(unit, this.hero);
           this.projectiles.push({
             id: this.nextId++,
@@ -800,13 +886,15 @@ export class Game {
             y: unit.y + Math.sin(a) * def.radius,
             vx: Math.cos(a) * def.projectileSpeed,
             vy: Math.sin(a) * def.projectileSpeed,
-            radius: 5,
+            radius: lob ? 9 : 5,
             damage,
-            life: 1.8,
-            color: '#c6ff8a',
+            life: lob ? 3.2 : 1.8,
+            splash: lob ? def.splashRadius : 0,
+            ignoreTerrain: lob,
+            color: lob ? '#ffb066' : '#c6ff8a',
             trail: [],
           });
-          this.sfx.play('spit');
+          this.sfx.play(lob ? 'boom' : 'spit');
         } else {
           unit.attackTimer = def.attackCooldown * 0.4;
         }
@@ -851,12 +939,7 @@ export class Game {
       this.fx.ring(unit.x, unit.y, 78, 'rgba(190,90,255,0.8)', { life: 0.35, fill: true });
     }
 
-    // Relics are permanent multipliers, so a long grind used to hand the
-    // champion dozens of them. Cap what a single run can drop.
-    if (this.heroRelics.length + this.relics.length < CONFIG.maxRelicsPerRun
-      && chance(0.07)) {
-      this.spawnRelic(unit.x, unit.y);
-    }
+    if (chance(CONFIG.dropChance)) this.spawnDrop(unit.x, unit.y);
   }
 
   damageUnit(unit, amount, opts = {}) {
@@ -880,6 +963,193 @@ export class Game {
       }
       this.fx.hit(unit.x, unit.y, '#ffcf8a', 6, 110);
     }
+  }
+
+  // ------------------------------------------------------------------ allies
+
+  /**
+   * The Summoner's wisps. They are deliberately not units and not heroes:
+   * they chase the swarm, they expire on their own, and killing one pays
+   * Aether but no champion XP — otherwise the class would feed itself.
+   */
+  summonWisps(count) {
+    const hero = this.hero;
+    for (let i = 0; i < count; i += 1) {
+      const a = rand(0, TAU);
+      const d = rand(40, 70);
+      const spot = { x: hero.x + Math.cos(a) * d, y: hero.y + Math.sin(a) * d };
+      this.world.clampToArena(spot, ALLY.radius + 4);
+      if (this.world.blocked(spot, ALLY.radius)) continue;
+      this.allies.push({
+        id: this.nextId++,
+        x: spot.x, y: spot.y,
+        vx: 0, vy: 0,
+        facing: a,
+        hp: ALLY.maxHp,
+        maxHp: ALLY.maxHp,
+        attackTimer: rand(0, ALLY.attackCooldown),
+        seed: rand(0, 100),
+        gait: rand(0, TAU),
+        hitFlash: 0,
+        spawnScale: 0,
+        life: ALLY.lifetime,
+      });
+      this.fx.ring(spot.x, spot.y, 34, 'rgba(255,226,168,0.85)', { life: 0.45 });
+      this.fx.burst(spot.x, spot.y, '#ffe9a8', 12, 120);
+    }
+    this.sfx.play('spawn');
+    this.log(`The ${this.heroClass.name} calls its wisps`, PALETTE.hero);
+  }
+
+  /** Nearest living wisp to `from`, within `range` if given. */
+  nearestAlly(from, range = Infinity) {
+    if (!this.allies.length) return null;
+    let best = null;
+    let bestD = range * range;
+    for (const a of this.allies) {
+      if (a.hp <= 0) continue;
+      const d = dist2(from, a);
+      if (d < bestD) { bestD = d; best = a; }
+    }
+    return best;
+  }
+
+  /** A swarm unit's blow landing on a wisp instead of the champion. */
+  attackAlly(unit, def, wisp, dmgMult) {
+    const damage = def.damage * dmgMult * this.linkBonus(unit);
+    unit.facing = angleTo(unit, wisp);
+    if (def.behavior === 'melee' || def.behavior === 'ambush') {
+      this.damageAlly(wisp, damage);
+      this.fx.slash(
+        unit.x + Math.cos(unit.facing) * def.radius,
+        unit.y + Math.sin(unit.facing) * def.radius,
+        unit.facing, def.radius * 1.6, PALETTE.swarmGlow, { arc: 2.0, width: 5 },
+      );
+      return;
+    }
+    const a = unit.facing;
+    const lob = def.behavior === 'artillery';
+    this.projectiles.push({
+      id: this.nextId++,
+      team: 'swarm',
+      x: unit.x + Math.cos(a) * def.radius,
+      y: unit.y + Math.sin(a) * def.radius,
+      vx: Math.cos(a) * def.projectileSpeed,
+      vy: Math.sin(a) * def.projectileSpeed,
+      radius: lob ? 9 : 5,
+      damage,
+      life: lob ? 3.2 : 1.8,
+      splash: lob ? def.splashRadius : 0,
+      ignoreTerrain: lob,
+      color: lob ? '#ffb066' : '#c6ff8a',
+      trail: [],
+    });
+    this.sfx.play(lob ? 'boom' : 'spit');
+  }
+
+  damageAlly(wisp, amount) {
+    if (wisp.hp <= 0) return;
+    wisp.hp -= amount;
+    wisp.hitFlash = 0.14;
+    this.fx.hit(wisp.x, wisp.y, '#ffe9a8', 6, 110);
+    if (wisp.hp <= 0) this.killAlly(wisp);
+  }
+
+  killAlly(wisp) {
+    wisp.hp = 0;
+    this.gain(CONFIG.allyAetherOnKill);
+    this.fx.burst(wisp.x, wisp.y, '#ffe4b0', 18, 170);
+    this.fx.ring(wisp.x, wisp.y, 40, 'rgba(255,220,160,0.7)', { life: 0.4 });
+    this.sfx.play('death');
+  }
+
+  updateAllies(dt) {
+    if (!this.allies.length) return;
+    for (const wisp of this.allies) {
+      if (wisp.hp <= 0) continue;
+      wisp.life -= dt;
+      wisp.attackTimer -= dt;
+      wisp.hitFlash = Math.max(0, wisp.hitFlash - dt);
+      wisp.spawnScale = Math.min(1, wisp.spawnScale + dt * 4);
+      if (wisp.life <= 0) {
+        // Burns out on its own rather than being killed, so no Aether is paid.
+        wisp.hp = 0;
+        this.fx.burst(wisp.x, wisp.y, '#ffe4b0', 10, 110);
+        continue;
+      }
+
+      const target = this.nearestUnit(wisp, (u) => u.invuln <= 0) ?? this.nearestUnit(wisp);
+      const move = { x: 0, y: 0 };
+      if (target) {
+        const d = Math.max(1, dist(wisp, target));
+        // Wisps close to inside melee reach; a flock that hovered outside it
+        // could only be answered by a Bombardier, which made the archetype a
+        // hard counter rather than a fight.
+        if (d > ALLY.attackRange * 0.6) {
+          move.x += (target.x - wisp.x) / d;
+          move.y += (target.y - wisp.y) / d;
+        } else if (d < ALLY.attackRange * 0.3) {
+          move.x += (wisp.x - target.x) / d * 0.8;
+          move.y += (wisp.y - target.y) / d * 0.8;
+        }
+      } else {
+        const d = Math.max(1, dist(wisp, this.hero));
+        if (d > 90) {
+          move.x += (this.hero.x - wisp.x) / d;
+          move.y += (this.hero.y - wisp.y) / d;
+        }
+      }
+      // Wisps spread out so one Judgment cannot delete the whole flock.
+      for (const other of this.allies) {
+        if (other === wisp || other.hp <= 0) continue;
+        const d = dist(wisp, other);
+        if (d > 1e-3 && d < ALLY.radius * 4) {
+          move.x += (wisp.x - other.x) / d * 0.7;
+          move.y += (wisp.y - other.y) / d * 0.7;
+        }
+      }
+      const avoid = this.world.avoidance(wisp, ALLY.radius + 14);
+      move.x += avoid.x;
+      move.y += avoid.y;
+
+      const len = Math.hypot(move.x, move.y);
+      if (len > 1e-3) {
+        wisp.vx = damp(wisp.vx, (move.x / len) * ALLY.speed, 8, dt);
+        wisp.vy = damp(wisp.vy, (move.y / len) * ALLY.speed, 8, dt);
+      } else {
+        wisp.vx = damp(wisp.vx, 0, 8, dt);
+        wisp.vy = damp(wisp.vy, 0, 8, dt);
+      }
+      const next = { x: wisp.x + wisp.vx * dt, y: wisp.y + wisp.vy * dt };
+      if (!this.world.blocked(next, ALLY.radius)) { wisp.x = next.x; wisp.y = next.y; }
+      this.world.clampToArena(wisp, ALLY.radius);
+      wisp.gait += dt * 6;
+      const speed = Math.hypot(wisp.vx, wisp.vy);
+      if (speed > 8) wisp.facing = approachAngle(wisp.facing, Math.atan2(wisp.vy, wisp.vx), dt * 8);
+      else if (target) wisp.facing = approachAngle(wisp.facing, angleTo(wisp, target), dt * 6);
+
+      if (target && wisp.attackTimer <= 0
+        && dist(wisp, target) <= ALLY.attackRange + UNITS[target.type].radius
+        && !this.world.lineBlocked(wisp, target, 6)) {
+        wisp.attackTimer = ALLY.attackCooldown;
+        const a = angleTo(wisp, target);
+        this.projectiles.push({
+          id: this.nextId++,
+          team: 'hero',
+          x: wisp.x + Math.cos(a) * ALLY.radius,
+          y: wisp.y + Math.sin(a) * ALLY.radius,
+          vx: Math.cos(a) * ALLY.projectileSpeed,
+          vy: Math.sin(a) * ALLY.projectileSpeed,
+          radius: 5,
+          damage: ALLY.damage * this.threat,
+          life: 1.4,
+          splash: 0, // wisp bolts do not splash; only the champion's shots do
+          color: '#ffe9a8',
+          trail: [],
+        });
+      }
+    }
+    this.allies = this.allies.filter((a) => a.hp > 0);
   }
 
   // -------------------------------------------------------------------- hero
@@ -933,11 +1203,13 @@ export class Game {
       name: base.name,
       radius: base.radius,
       ability: base.ability,
+      // hpMult stays permanent-only: a boon that raised max HP would leave
+      // the champion above its own cap the moment it expired.
       maxHp: Math.round(base.maxHp * this.heroMods.hpMult * (1 + (t - 1) * 0.5)),
-      moveSpeed: base.moveSpeed * this.heroMods.moveSpeedMult * (1 + (t - 1) * 0.25),
-      damage: base.damage * this.heroMods.damageMult * (1 + (t - 1) * 0.4),
+      moveSpeed: base.moveSpeed * this.heroMod('moveSpeedMult') * (1 + (t - 1) * 0.25),
+      damage: base.damage * this.heroMod('damageMult') * (1 + (t - 1) * 0.4),
       attackRange: base.attackRange + this.heroMods.attackRangeBonus,
-      attackCooldown: base.attackCooldown * this.heroMods.attackCooldownMult,
+      attackCooldown: base.attackCooldown * this.heroMod('attackCooldownMult'),
     };
   }
 
@@ -968,6 +1240,16 @@ export class Game {
     hero.abilityTimer -= dt;
     hero.hitFlash = Math.max(0, hero.hitFlash - dt);
     hero.swing = Math.max(0, hero.swing - dt * 4);
+
+    // Wisps keep arriving through an ability, so the class never goes quiet.
+    const summons = this.heroClass.summons;
+    if (summons) {
+      hero.summonTimer -= dt;
+      if (hero.summonTimer <= 0 && this.units.length > 0 && this.allies.length < summons.max) {
+        hero.summonTimer = summons.interval;
+        this.summonWisps(Math.min(summons.count, summons.max - this.allies.length));
+      }
+    }
 
     // Poison ticks regardless of what the hero is doing.
     if (hero.poison > 0) {
@@ -1206,9 +1488,9 @@ export class Game {
     const spec = HERO_ABILITIES[stats.ability];
     if (!spec) return;
     const hero = this.hero;
-    const radiusMult = this.heroMods.aoeRadiusMult;
+    const radiusMult = this.heroMod('aoeRadiusMult');
 
-    hero.abilityTimer = spec.cooldown * this.heroMods.abilityCooldownMult;
+    hero.abilityTimer = spec.cooldown * this.heroMod('abilityCooldownMult');
     this.sfx.play('telegraph');
 
     if (stats.ability === 'dash') {
@@ -1318,7 +1600,7 @@ export class Game {
       action.tick = (action.tick ?? 0) - dt;
       if (action.tick <= 0) {
         action.tick = action.spec.tickRate;
-        const radius = action.spec.radius * this.heroMods.aoeRadiusMult;
+        const radius = action.spec.radius * this.heroMod('aoeRadiusMult');
         this.fx.ring(hero.x, hero.y, radius, 'rgba(255,230,170,0.7)', { life: 0.3, width: 4 });
         for (const u of this.units) {
           if (!this.targetable(u)) continue;
@@ -1351,7 +1633,7 @@ export class Game {
       return;
     }
 
-    const radius = action.radius ?? spec.radius * this.heroMods.aoeRadiusMult;
+    const radius = action.radius ?? spec.radius * this.heroMod('aoeRadiusMult');
     const cx = action.x ?? hero.x;
     const cy = action.y ?? hero.y;
 
@@ -1385,29 +1667,39 @@ export class Game {
       p.y += p.vy * dt;
 
       if (!this.world.inArena(p, -8)) { p.life = 0; continue; }
-      if (this.world.blocked(p, p.radius)) {
+      // Lobbed shells arc over terrain instead of splattering against it.
+      if (!p.ignoreTerrain && this.world.blocked(p, p.radius)) {
         this.fx.hit(p.x, p.y, 'rgba(190,180,170,0.9)', 6, 80);
         p.life = 0;
         continue;
       }
 
       if (p.team === 'swarm') {
+        const wisp = this.nearestAlly(p, p.radius + ALLY.radius);
         if (dist(p, this.hero) < p.radius + heroStats.radius) {
           this.damageHero(p.damage, p);
+          this.splashSwarmShell(p, 'hero');
+          p.life = 0;
+        } else if (wisp) {
+          this.damageAlly(wisp, p.damage);
+          this.splashSwarmShell(p, 'ally');
           p.life = 0;
         }
       } else {
+        const splash = p.splash ?? 46;
         for (const u of this.units) {
           if (u.invuln > 0 || !this.targetable(u)) continue;
           if (dist(p, u) < p.radius + UNITS[u.type].radius) {
             this.damageUnit(u, p.damage, { source: 'hero' });
             // Small splash: clustering under fire has a cost.
-            for (const other of this.units) {
-              if (other === u || other.invuln > 0 || !this.targetable(other)) continue;
-              if (dist(other, p) < 46) this.damageUnit(other, p.damage * 0.5, { source: 'hero' });
+            if (splash > 0) {
+              for (const other of this.units) {
+                if (other === u || other.invuln > 0 || !this.targetable(other)) continue;
+                if (dist(other, p) < splash) this.damageUnit(other, p.damage * 0.5, { source: 'hero' });
+              }
+              this.fx.ring(p.x, p.y, splash, 'rgba(255,220,150,0.6)', { life: 0.25 });
             }
             this.fx.hit(p.x, p.y, '#ffe9a8', 10, 150);
-            this.fx.ring(p.x, p.y, 46, 'rgba(255,220,150,0.6)', { life: 0.25 });
             p.life = 0;
             break;
           }
@@ -1415,20 +1707,46 @@ export class Game {
       }
     }
     this.projectiles = this.projectiles.filter((p) => p.life > 0);
+    this.allies = this.allies.filter((a) => a.hp > 0);
     this.reapUnits();
   }
 
-  // -------------------------------------------------------------------- relics
+  /** A Bombardier shell catches the champion and every wisp near the blast. */
+  splashSwarmShell(p, primary) {
+    if (!p.splash) return;
+    this.fx.ring(p.x, p.y, p.splash, 'rgba(255,150,80,0.75)', { life: 0.35, fill: true });
+    this.fx.burst(p.x, p.y, '#ffb066', 18, 200);
+    this.fx.addShake(0.25);
+    for (const wisp of this.allies) {
+      if (wisp.hp <= 0) continue;
+      if (dist(wisp, p) < p.splash) this.damageAlly(wisp, p.damage * 0.7);
+    }
+    // A shell aimed at a wisp still singes the champion standing behind it.
+    if (primary === 'ally' && dist(this.hero, p) < p.splash) {
+      this.damageHero(p.damage * 0.7, p);
+    }
+  }
 
-  spawnRelic(x, y) {
-    const def = pick(HERO_RELICS);
+  // --------------------------------------------------------------- pickups
+
+  /**
+   * Corpses occasionally leave something the champion can walk over. Most of
+   * it is a short, loud boon; permanent relics are the rare tail, and capped,
+   * because a long grind used to hand the champion a dozen of them.
+   */
+  spawnDrop(x, y) {
+    if (this.relics.length >= CONFIG.maxDropsOnField) return;
+    const relicsLeft = this.heroRelics.length + this.relics.filter((d) => d.kind === 'relic').length;
+    const permanent = relicsLeft < CONFIG.maxRelicsPerRun && chance(CONFIG.dropPermanentShare);
+    const def = permanent ? pick(HERO_RELICS) : pick(HERO_BOONS);
     this.relics.push({
       id: this.nextId++,
+      kind: permanent ? 'relic' : 'boon',
       relic: def,
       x: x + rand(-12, 12),
       y: y + rand(-12, 12),
       color: def.color,
-      life: 14,
+      life: CONFIG.dropLifetime,
       seed: rand(0, 10),
     });
   }
@@ -1437,8 +1755,12 @@ export class Game {
     const radius = this.heroStats().radius;
     for (const r of this.relics) {
       r.life -= dt;
-      if (dist(r, this.hero) < radius + 16) {
-        r.life = 0;
+      if (dist(r, this.hero) >= radius + 16) continue;
+      r.life = 0;
+
+      if (r.kind === 'boon') {
+        this.grantBoon(r.relic);
+      } else {
         this.applyHeroMods(r.relic.mods ?? {});
         this.heroRelics.push(r.relic);
         this.refreshHeroCache();
@@ -1446,12 +1768,57 @@ export class Game {
           this.hero.hp = Math.min(this.heroStats().maxHp, this.hero.hp + this.heroStats().maxHp * r.relic.heal);
         }
         this.log(`Champion claimed ${r.relic.name} (${r.relic.desc})`, r.relic.color);
-        this.fx.text(this.hero.x, this.hero.y - 40, r.relic.name, r.relic.color, { size: 16 });
-        this.fx.ring(this.hero.x, this.hero.y, 60, r.relic.color, { life: 0.6 });
-        this.sfx.play('upgrade');
       }
+      this.fx.text(this.hero.x, this.hero.y - 40, r.relic.name, r.relic.color, { size: 16 });
+      this.fx.ring(this.hero.x, this.hero.y, 60, r.relic.color, { life: 0.6 });
+      this.sfx.play('upgrade');
     }
     this.relics = this.relics.filter((r) => r.life > 0);
+  }
+
+  /** Re-drinking a boon refreshes it rather than stacking it. */
+  grantBoon(def) {
+    const existing = this.heroBoons.find((b) => b.def.id === def.id);
+    if (existing) existing.timer = def.duration;
+    else this.heroBoons.push({ def, timer: def.duration });
+    this.log(`Champion drank ${def.name} (${def.desc})`, def.color);
+  }
+
+  updateBoons(dt) {
+    if (!this.heroBoons.length) return;
+    for (const boon of this.heroBoons) {
+      boon.timer -= dt;
+      if (boon.def.regen && this.hero.hp > 0) {
+        const maxHp = this.heroStats().maxHp;
+        this.hero.hp = Math.min(maxHp, this.hero.hp + (maxHp * boon.def.regen / boon.def.duration) * dt);
+        if (chance(dt * 6)) {
+          this.fx.particle({
+            x: this.hero.x + rand(-14, 14), y: this.hero.y + rand(-8, 12),
+            vx: 0, vy: -rand(24, 54), life: 0.6, size: 2.4, color: boon.def.color,
+          });
+        }
+      }
+    }
+    const expired = this.heroBoons.filter((b) => b.timer <= 0);
+    if (expired.length) {
+      for (const boon of expired) this.log(`${boon.def.name} burned out`, PALETTE.uiDim);
+      this.heroBoons = this.heroBoons.filter((b) => b.timer > 0);
+    }
+  }
+
+  /** Combined multiplier for `key` across every active boon. */
+  boonMult(key) {
+    let mult = 1;
+    for (const boon of this.heroBoons) {
+      const v = boon.def.mods?.[key];
+      if (v !== undefined) mult *= v;
+    }
+    return mult;
+  }
+
+  /** Permanent hero modifier for `key`, scaled by whatever it is drinking. */
+  heroMod(key) {
+    return this.heroMods[key] * this.boonMult(key);
   }
 
   // ---------------------------------------------------------------- damage
@@ -1489,6 +1856,7 @@ export class Game {
     this.hero.action = null;
     this.telegraph = null;
     for (const u of this.units) u.dashHit = false;
+    this.allies = [];
     this.phase = 'victory';
     this.endReason = `The ${this.heroStats().name} fell after ${Math.floor(this.time)}s.`;
     this.fx.burst(this.hero.x, this.hero.y, '#ffd9a0', 70, 420, { gravity: 200 });
@@ -1541,7 +1909,10 @@ export class Game {
     // the cost has to grow geometrically or the two feed each other: a linear
     // step still let long runs stack forty-plus mutations. A hard cap keeps
     // the ceiling readable on top of that.
-    if (this.earned >= this.nextUpgradeAt
+    // A strain pick opened earlier in this same frame must not be overwritten
+    // by a mutation offer; the pick would be dropped and re-opened next frame.
+    if (this.phase === 'playing'
+      && this.earned >= this.nextUpgradeAt
       && this.takenUpgrades.length < CONFIG.maxUpgradesPerRun) {
       this.nextUpgradeAt = this.earned
         + CONFIG.aetherPerUpgrade * CONFIG.upgradeCostGrowth ** this.takenUpgrades.length;
@@ -1719,6 +2090,9 @@ export class Game {
     for (const u of this.units) {
       if (this.visible(u.x, u.y, 60)) actors.push({ y: u.y, kind: 'unit', ref: u });
     }
+    for (const a of this.allies) {
+      if (this.visible(a.x, a.y, 60)) actors.push({ y: a.y, kind: 'ally', ref: a });
+    }
     for (const t of props) actors.push({ y: t.y, kind: 'prop', ref: t });
     actors.push({ y: this.hero.y, kind: 'hero', ref: this.hero });
     actors.sort((a, b) => a.y - b.y);
@@ -1740,6 +2114,8 @@ export class Game {
     for (const actor of actors) {
       if (actor.kind === 'unit') {
         drawUnit(ctx, actor.ref, UNITS[actor.ref.type], this.time, lod);
+      } else if (actor.kind === 'ally') {
+        drawAlly(ctx, actor.ref, ALLY, this.time);
       } else if (actor.kind === 'prop') {
         drawTerrain(ctx, actor.ref, this.time);
       } else {
@@ -1753,6 +2129,11 @@ export class Game {
       if (u.hp >= u.maxHp - 0.01) continue;
       const def = UNITS[u.type];
       this.drawMiniBar(ctx, u.x, u.y - def.radius - 9, def.radius * 2.2, 3, u.hp / u.maxHp, '#6ef2a4');
+    }
+    for (const a of this.allies) {
+      if (!this.visible(a.x, a.y, 60)) continue;
+      if (a.hp >= a.maxHp - 0.01) continue;
+      this.drawMiniBar(ctx, a.x, a.y - ALLY.radius - 9, ALLY.radius * 2.2, 3, a.hp / a.maxHp, '#ffd489');
     }
     this.drawMiniBar(
       ctx, this.hero.x, this.hero.y - heroStats.radius - 20, 84, 6,

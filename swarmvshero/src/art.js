@@ -457,6 +457,8 @@ export function drawUnit(ctx, u, def, time, lod) {
     case 'burrower': drawBurrower(ctx, u, def, time, lod); break;
     case 'shrieker': drawShrieker(ctx, u, def, time, lod); break;
     case 'matriarch': drawMatriarch(ctx, u, def, time, lod); break;
+    case 'mender': drawMender(ctx, u, def, time, lod); break;
+    case 'bombardier': drawBombardier(ctx, u, def, time, lod); break;
     default: drawTitan(ctx, u, def, time, lod); break;
   }
 
@@ -959,6 +961,101 @@ function drawMatriarch(ctx, u, def, time, lod) {
   ctx.fill();
 }
 
+function drawMender(ctx, u, def, time, lod) {
+  const r = def.radius;
+  // The dome brightens as the mend tick comes round, so its rhythm is visible.
+  const charge = clamp(1 - (u.mendTimer ?? 0) / def.attackCooldown, 0, 1);
+  const pulse = 0.35 + charge * 0.65;
+
+  if (lod > 0) legs(ctx, u, 3, r * 0.66, r * 0.62, 2.2, '#123f31', 0.55);
+
+  // Translucent healing dome.
+  const dome = ctx.createRadialGradient(-r * 0.15, -r * 0.35, r * 0.1, 0, 0, r * 1.05);
+  dome.addColorStop(0, `rgba(200,255,226,${0.55 + pulse * 0.35})`);
+  dome.addColorStop(0.5, def.color);
+  dome.addColorStop(1, '#0d3a2c');
+  ctx.fillStyle = dome;
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.1, 0, r * 0.92, r * 0.82, 0, 0, TAU);
+  ctx.fill();
+
+  // Spore vents around the rim.
+  if (lod > 0) {
+    ctx.fillStyle = `rgba(150,255,205,${0.3 + pulse * 0.5})`;
+    for (let i = 0; i < 6; i += 1) {
+      const a = (i / 6) * TAU + u.seed + time * 0.4;
+      ctx.beginPath();
+      ctx.arc(-r * 0.1 + Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.52, r * 0.13, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  // Core.
+  ctx.fillStyle = `rgba(226,255,238,${0.5 + pulse * 0.5})`;
+  ctx.beginPath();
+  ctx.arc(-r * 0.1, 0, r * 0.3 + charge * r * 0.08, 0, TAU);
+  ctx.fill();
+
+  // Blunt head; it has no mouthparts because it never bites anything.
+  ctx.fillStyle = '#0f4436';
+  ctx.beginPath();
+  ctx.ellipse(r * 0.66, 0, r * 0.34, r * 0.3, 0, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = '#9dffcf';
+  ctx.beginPath();
+  ctx.arc(r * 0.76, -r * 0.13, r * 0.08, 0, TAU);
+  ctx.arc(r * 0.76, r * 0.13, r * 0.08, 0, TAU);
+  ctx.fill();
+}
+
+function drawBombardier(ctx, u, def, time, lod) {
+  const r = def.radius;
+  const load = clamp(1 - (u.attackTimer ?? 0) / def.attackCooldown, 0, 1);
+
+  if (lod > 0) legs(ctx, u, 3, r * 0.74, r * 0.62, 3, '#4a2410', 0.5);
+
+  // Heavy carapace.
+  const shell = ctx.createLinearGradient(-r * 0.9, -r * 0.7, r * 0.7, r * 0.6);
+  shell.addColorStop(0, '#54260d');
+  shell.addColorStop(0.5, def.color);
+  shell.addColorStop(1, '#3a1a08');
+  ctx.fillStyle = shell;
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.12, 0, r * 0.98, r * 0.8, 0, 0, TAU);
+  ctx.fill();
+
+  // Mortar sac on the back, swelling as the shell is loaded.
+  ctx.fillStyle = `rgba(255,170,90,${0.4 + load * 0.5})`;
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.42, 0, r * 0.4 * (0.75 + load * 0.35), r * 0.34 * (0.75 + load * 0.35), 0, 0, TAU);
+  ctx.fill();
+
+  // Plated ridges.
+  if (lod > 0) {
+    ctx.strokeStyle = 'rgba(20,10,4,0.55)';
+    ctx.lineWidth = 2;
+    for (let i = -1; i <= 1; i += 1) {
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.12 + i * r * 0.28, 0, r * 0.1, r * 0.72, 0, 0, TAU);
+      ctx.stroke();
+    }
+  }
+
+  // Forward-facing launch tube.
+  ctx.fillStyle = '#2c1406';
+  ctx.beginPath();
+  ctx.moveTo(r * 0.5, -r * 0.3);
+  ctx.lineTo(r * 1.35, -r * 0.17);
+  ctx.lineTo(r * 1.35, r * 0.17);
+  ctx.lineTo(r * 0.5, r * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = `rgba(255,190,120,${0.35 + load * 0.6})`;
+  ctx.beginPath();
+  ctx.ellipse(r * 1.32, 0, r * 0.1, r * 0.16, 0, 0, TAU);
+  ctx.fill();
+}
+
 // ----------------------------------------------------------------------- hero
 
 /**
@@ -1116,6 +1213,36 @@ export function drawHero(ctx, hero, stats, cls, stage, time) {
 }
 
 function drawWeapon(ctx, weapon, r, stage, time) {
+  if (weapon === 'scepter') {
+    // Short rod with a caged sigil; the ring spins when wisps are due.
+    ctx.strokeStyle = '#4a3a5c';
+    ctx.lineWidth = r * 0.16;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.2, 0);
+    ctx.lineTo(r * 1.15, -r * 0.14);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(r * 1.22, -r * 0.16);
+    ctx.rotate(time * 1.6);
+    ctx.strokeStyle = 'rgba(255,226,168,0.9)';
+    ctx.lineWidth = r * 0.07;
+    for (let i = 0; i < 2; i += 1) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.2 + i * 0.11), i * 1.4, i * 1.4 + 4.4);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(255,236,190,${0.55 + Math.sin(time * 5) * 0.25})`;
+    ctx.beginPath();
+    ctx.arc(r * 1.22, -r * 0.16, r * 0.16, 0, TAU);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    return;
+  }
   if (weapon === 'staff') {
     ctx.strokeStyle = '#6b5432';
     ctx.lineWidth = r * 0.14;
@@ -1314,15 +1441,68 @@ export function drawProjectile(ctx, p, time) {
   ctx.restore();
 }
 
+/**
+ * A summoned wisp: a hovering mote of the champion's own light, with a slow
+ * halo so it never reads as one of the player's units.
+ */
+export function drawAlly(ctx, a, def, time) {
+  const r = def.radius;
+  const hover = Math.sin(time * 3.4 + a.seed) * 3 - 5;
+  const fade = clamp(a.life / 3, 0, 1); // blinks out as it burns down
+  const scale = clamp(a.spawnScale ?? 1, 0.1, 1);
+
+  contactShadow(ctx, a.x + 2, a.y + r * 0.7, r * 0.7, r * 0.3, 0.22 * fade);
+  drawGlow(ctx, a.x, a.y + hover, r * 3.4, 'rgba(255,214,140,1)', 0.22 * fade);
+
+  ctx.save();
+  ctx.translate(a.x, a.y + hover);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = 0.35 + fade * 0.65;
+
+  // Orbiting motes.
+  ctx.fillStyle = 'rgba(255,238,196,0.85)';
+  for (let i = 0; i < 3; i += 1) {
+    const ang = time * 2.2 + a.seed + (i / 3) * TAU;
+    ctx.beginPath();
+    ctx.arc(Math.cos(ang) * r * 1.3, Math.sin(ang) * r * 0.62, r * 0.16, 0, TAU);
+    ctx.fill();
+  }
+
+  // Body: a teardrop pointing where it is looking.
+  ctx.rotate(a.facing);
+  const body = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+  body.addColorStop(0, '#fff6de');
+  body.addColorStop(0.55, def.color);
+  body.addColorStop(1, 'rgba(180,120,40,0.15)');
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.moveTo(r * 1.05, 0);
+  ctx.quadraticCurveTo(0, -r * 0.82, -r * 0.75, 0);
+  ctx.quadraticCurveTo(0, r * 0.82, r * 1.05, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  if (a.hitFlash > 0) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = clamp(a.hitFlash / 0.14, 0, 1) * 0.8;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.9, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export function drawRelic(ctx, relic, time) {
   const bob = Math.sin(time * 3 + relic.seed) * 3;
   const y = relic.y + bob;
+  const fading = relic.life < 3 ? 0.35 + Math.abs(Math.sin(time * 7)) * 0.65 : 1;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const g = ctx.createRadialGradient(relic.x, y, 0, relic.x, y, 26);
   g.addColorStop(0, relic.color);
   g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = 0.7;
+  ctx.globalAlpha = 0.7 * fading;
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(relic.x, y, 26, 0, TAU);
@@ -1331,6 +1511,39 @@ export function drawRelic(ctx, relic, time) {
 
   ctx.save();
   ctx.translate(relic.x, y);
+  ctx.globalAlpha = fading;
+
+  if (relic.kind === 'boon') {
+    // A flask, so the temporary drop never reads as a permanent relic.
+    ctx.rotate(Math.sin(time * 2 + relic.seed) * 0.25);
+    ctx.fillStyle = 'rgba(20,16,28,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(-3.5, -9);
+    ctx.lineTo(3.5, -9);
+    ctx.lineTo(3.5, -4);
+    ctx.quadraticCurveTo(8, 1, 5, 8);
+    ctx.lineTo(-5, 8);
+    ctx.quadraticCurveTo(-8, 1, -3.5, -4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = relic.color;
+    ctx.beginPath();
+    ctx.moveTo(-4.6, 1);
+    ctx.quadraticCurveTo(0, 3, 4.6, 1);
+    ctx.lineTo(4.2, 6.6);
+    ctx.lineTo(-4.2, 6.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = relic.color;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-3.5, -9);
+    ctx.lineTo(3.5, -9);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
   ctx.rotate(time * 1.2 + relic.seed);
   ctx.fillStyle = '#fffaf0';
   ctx.beginPath();

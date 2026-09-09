@@ -1,7 +1,10 @@
 // All screen-space UI: panels, unit cards, minimap, overlays and the cursor
 // placement ghost.
 
-import { CONFIG, PALETTE, UNITS, UNIT_ORDER, HERO_STAGES, HERO_ABILITIES } from './config.js';
+import {
+  CONFIG, PALETTE, UNITS, UNIT_ORDER, UNIT_SLOTS, SLOT_UNLOCK_AT,
+  HERO_STAGES, HERO_ABILITIES,
+} from './config.js';
 import { clamp, dist } from './math.js';
 import { drawUnit } from './art.js';
 
@@ -13,6 +16,8 @@ const BEHAVIOUR_LABEL = {
   support: 'support',
   ambush: 'ambush',
   brood: 'breeder',
+  mender: 'healer',
+  artillery: 'siege',
 };
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -48,6 +53,7 @@ export const HELP_PAGES = [
       ['Controls', [
         'Left-click        summon the selected unit there (a rift opens first)',
         '1 - 7             select a unit; pressing it also summons at the cursor',
+        '                  during a strain pick, 1 and 2 choose instead',
         'Right-click       place a rally beacon — the swarm gathers and waits',
         'Q                 clear the rally beacon',
         'Space             Frenzy: release the swarm, buffed and ability-resistant',
@@ -63,25 +69,23 @@ export const HELP_PAGES = [
         'your units. A constant trickle of Mites does not wear it down — it arms it.',
         'The tier bar under its health is, in effect, a record of your mistakes.',
       ]],
-      ['Pressure is the baseline', [
-        'Keep units on the champion and wells under you. An idle swarm is wasted',
-        'damage, and the champion gains experience just by existing — standing off',
-        'and hoarding an army loses more often than it wins.',
+      ['Corpses leave things behind', [
+        'About one death in twenty drops a pickup. Most are flasks — a loud boon for',
+        'ten seconds or so — and the rare spinning relics are permanent, nine a run.',
+        'The champion has to walk over one, so a drop is a piece of map to play',
+        'around: fight elsewhere, or take the trade. They fade after 13 seconds.',
       ]],
-      ['The beacon is a steering wheel, not a car park', [
-        'Right-click sets a rally point and the swarm gathers there instead of',
-        'charging. Use it to react, not to hoard:',
-        '\u2022 pull the swarm out of a telegraphed ability, then send them back in',
-        '\u2022 regroup survivors after a wipe so they arrive together, not in ones',
-        '\u2022 pin a push on one flank while the champion is busy on the other',
-        'Set it near the fight. A beacon across the map just means a long walk.',
+      ['The beacon steers, it does not store', [
+        'Right-click gathers the swarm at a point instead of charging. Use it to pull',
+        'units out of a telegraph, to regroup survivors so they arrive together, or to',
+        'pin one flank. Set it near the fight — a beacon across the map is a long walk,',
+        'and an idle swarm is wasted damage while the champion trains for free.',
       ]],
       ['Frenzy is your commit button', [
-        'Space clears the beacon, releases every garrison, and for a few seconds',
-        'the swarm moves faster, hits harder, and takes half damage from the',
-        'champion\'s abilities. That last part is the point: it is the one window',
-        'where a packed swarm can stand inside a Shockwave and keep swinging.',
-        'Save it for when you actually have bodies on the field.',
+        'Space clears the beacon, releases every garrison, and for a few seconds the',
+        'swarm moves faster, hits harder, and takes half damage from abilities.',
+        'That last part is the point: it is the one window where a packed swarm can',
+        'stand inside a Shockwave and keep swinging. Spend it when you have bodies.',
       ]],
     ],
   },
@@ -109,6 +113,30 @@ export const HELP_PAGES = [
   {
     title: 'Your units',
     body: null, // rendered from the roster
+  },
+  {
+    title: 'Strains',
+    body: [
+      ['The last two slots are a choice', [
+        'Slots 1 to 5 are always the same. Slots 6 and 7 open as a pick between two',
+        'units of the same weight, and the run stops so you can commit. What you',
+        'pass on is gone for the rest of the run.',
+      ]],
+      ['Slot 6 — Matriarch or Mender', [
+        'MATRIARCH replaces losses: she hatches free Mites forever, so a long grind',
+        'costs you less Aether. Take her when you are trading bodies constantly.',
+        'MENDER keeps what you already have: it heals every unit around it, which',
+        'turns a packed swarm into something that survives a Shockwave. Take it when',
+        'your units are expensive and you want them to live through the ability.',
+      ]],
+      ['Slot 7 — Titan or Bombardier', [
+        'TITAN is a 520 HP brawler that walks in and holds the champion in place.',
+        'It is the answer to a melee champion and to anything that has to be tanked.',
+        'BOMBARDIER never enters the fight: it lobs shells over terrain from 410',
+        'away and splashes on impact. It is the only thing in the roster that can',
+        'clear a Summoner\u2019s wisps, and the only answer to a champion that kites.',
+      ]],
+    ],
   },
   {
     title: 'The champion',
@@ -233,7 +261,7 @@ export class Hud {
    */
   actionBarLayout() {
     const g = this.game;
-    const count = UNIT_ORDER.length;
+    const count = UNIT_SLOTS.length;
     const tight = g.width < 940;
     const margin = tight ? 10 : 16;
     const gap = tight ? 5 : 8;
@@ -247,14 +275,45 @@ export class Hud {
     return { cardW, cardH, gap, frenzyW, startX, y, count, compact: cardW < 104 };
   }
 
+  /**
+   * One rect per slot. A paired slot whose strain has not been picked yet
+   * carries a null id and renders as an undecided card.
+   */
   unitCardRects() {
     const L = this.actionBarLayout();
-    return UNIT_ORDER.map((id, i) => ({
-      id,
+    return UNIT_SLOTS.map((options, i) => ({
+      id: this.game.roster[i],
+      slot: i,
+      options,
+      unlockAt: SLOT_UNLOCK_AT[i],
       x: L.startX + i * (L.cardW + L.gap),
       y: L.y,
       w: L.cardW,
       h: L.cardH,
+    }));
+  }
+
+  /** Two big cards for the strain pick, laid out like the mutation panel. */
+  unitChoiceRects() {
+    const g = this.game;
+    const options = g.unitChoice ? g.unitChoice.options : [];
+    const gap = 24;
+    const cardW = clamp((g.width - 100 - (options.length - 1) * gap) / Math.max(1, options.length), 200, 280);
+    // The cards have to clear the action bar on short windows, so their height
+    // comes from the space actually available rather than a fixed 236.
+    const top = Math.max(96, g.height / 2 - 118);
+    const bottom = this.actionBarLayout().y - 14;
+    const cardH = clamp(bottom - top, 176, 236);
+    const totalW = options.length * cardW + (options.length - 1) * gap;
+    const startX = (g.width - totalW) / 2;
+    const y = Math.max(top, Math.min(g.height / 2 - cardH / 2 + 26, bottom - cardH));
+    return options.map((id, i) => ({
+      id,
+      index: i,
+      x: startX + i * (cardW + gap),
+      y,
+      w: cardW,
+      h: cardH,
     }));
   }
 
@@ -393,7 +452,7 @@ export class Hud {
       if (!consumed) {
         for (const rect of this.unitCardRects()) {
           if (this.hit(rect, click)) {
-            if (g.unlocked.has(rect.id)) g.selected = rect.id;
+            if (rect.id && g.unlocked.has(rect.id)) g.selected = rect.id;
             consumed = true;
             break;
           }
@@ -419,6 +478,20 @@ export class Hud {
         }
       }
     }
+  }
+
+  handleUnitChoiceClicks() {
+    const g = this.game;
+    for (const click of g.clicks) {
+      for (const card of this.unitChoiceRects()) {
+        if (this.hit(card, click)) {
+          g.chooseUnit(card.id);
+          g.clicks = [];
+          return;
+        }
+      }
+    }
+    g.clicks = [];
   }
 
   handleEndClicks() {
@@ -469,6 +542,7 @@ export class Hud {
     if (g.phase === 'intro') this.drawIntro(ctx);
     if (g.phase === 'paused') this.drawCenter(ctx, 'Paused', 'Esc to resume · H for the guide');
     if (g.phase === 'upgrade') this.drawUpgrades(ctx);
+    if (g.phase === 'choose') this.drawUnitChoice(ctx);
     if (g.phase === 'victory') this.drawEnd(ctx, 'Victory', g.endReason, PALETTE.good);
     if (g.phase === 'defeat') this.drawEnd(ctx, 'Defeat', g.endReason, PALETTE.danger);
     if (g.helpVisible) this.drawHelp(ctx);
@@ -603,10 +677,22 @@ export class Hud {
       statuses.push({ text: `Marked +${Math.round(deb.mark * 100)}%`, color: '#7fdcff' });
     }
     if (g.hero.poison > 0) statuses.push({ text: `Poison ${g.hero.poison.toFixed(0)}`, color: '#9dff7a' });
+    for (const boon of g.heroBoons) {
+      statuses.push({ text: `${boon.def.name} ${Math.ceil(boon.timer)}s`, color: boon.def.color });
+    }
+    if (g.allies.length) {
+      statuses.push({
+        text: `${g.allies.length} wisp${g.allies.length === 1 ? '' : 's'}`,
+        color: '#ffd489',
+      });
+    }
     if (g.hero.state === 'retreat') statuses.push({ text: 'Retreating to a well', color: '#ffc98a' });
     if (g.hero.state === 'reclaim') statuses.push({ text: 'Purging your wells', color: '#ff9a7a' });
 
-    const rect = this.heroPanelRect((finalStage ? 20 : 0) + (statuses.length ? 20 : 0));
+    // Chips wrap onto a second row once boons stack up, so the panel has to
+    // grow with them rather than clipping them at the border.
+    const chipRows = statuses.length ? (statuses.length > 3 ? 2 : 1) : 0;
+    const rect = this.heroPanelRect((finalStage ? 20 : 0) + chipRows * 20);
     const { x, y, w, h } = rect;
     this.panel(ctx, x, y, w, h, { stroke: 'rgba(255,210,140,0.28)' });
 
@@ -656,15 +742,21 @@ export class Hud {
     // Status chips get their own row, so nothing can collide.
     if (statuses.length) {
       let chipX = x + 14;
+      let chipY = cursorY;
+      const lastRowY = cursorY + (chipRows - 1) * 20;
       for (const status of statuses) {
         const tw = this.measure(ctx, status.text, { size: 10.5, weight: 700 });
-        if (chipX + tw + 14 > x + w - 14) break;
+        if (chipX + tw + 14 > x + w - 14) {
+          if (chipY >= lastRowY) break;
+          chipY += 20;
+          chipX = x + 14;
+        }
         ctx.save();
-        roundRect(ctx, chipX, cursorY, tw + 12, 16, 8);
+        roundRect(ctx, chipX, chipY, tw + 12, 16, 8);
         ctx.fillStyle = 'rgba(255,255,255,0.08)';
         ctx.fill();
         ctx.restore();
-        this.text(ctx, status.text, chipX + 6, cursorY + 12, {
+        this.text(ctx, status.text, chipX + 6, chipY + 12, {
           size: 10.5, weight: 700, color: status.color,
         });
         chipX += tw + 18;
@@ -694,12 +786,19 @@ export class Hud {
     this.hoverCard = null;
 
     for (const rect of rects) {
+      // A paired slot before the pick: show what is coming, not a unit.
+      if (!rect.id) {
+        this.drawUndecidedCard(ctx, rect, compact);
+        continue;
+      }
+
       const def = UNITS[rect.id];
       const unlocked = g.unlocked.has(rect.id);
       const cost = g.unitCost(rect.id);
       const affordable = g.aether >= cost;
       const selected = g.selected === rect.id;
-      const onCooldown = rect.id === 'titan' && g.titanCooldown > 0;
+      const cooldown = g.summonCooldown(rect.id);
+      const onCooldown = cooldown > 0;
       const hovered = this.hit(rect, g.mouse);
       if (hovered) this.hoverCard = rect.id;
 
@@ -757,7 +856,7 @@ export class Hud {
         ctx.fillStyle = 'rgba(8,10,16,0.78)';
         ctx.fill();
         ctx.restore();
-        this.text(ctx, `${Math.ceil(Math.max(0, def.unlockAt - g.time))}s`,
+        this.text(ctx, `${Math.ceil(Math.max(0, rect.unlockAt - g.time))}s`,
           rect.x + rect.w / 2, rect.y + rect.h / 2 + 2, {
             size: compact ? 14 : 16, weight: 700, align: 'center', color: '#cbb9e8',
           });
@@ -769,15 +868,93 @@ export class Hud {
         roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 10);
         ctx.clip();
         ctx.fillStyle = 'rgba(8,10,16,0.76)';
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h * (g.titanCooldown / def.summonCooldown));
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h * (cooldown / def.summonCooldown));
         ctx.restore();
-        this.text(ctx, `${Math.ceil(g.titanCooldown)}s`, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5, {
+        this.text(ctx, `${Math.ceil(cooldown)}s`, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5, {
           size: 16, weight: 700, align: 'center', color: '#ffd0dc',
         });
       }
     }
 
     if (this.hoverCard) this.drawUnitTooltip(ctx, this.hoverCard, rects);
+  }
+
+  /** Placeholder card for a slot whose strain has not been chosen yet. */
+  drawUndecidedCard(ctx, rect, compact) {
+    const g = this.game;
+    const due = Math.max(0, rect.unlockAt - g.time);
+    this.panel(ctx, rect.x, rect.y, rect.w, rect.h, {
+      fill: 'rgba(14,18,26,0.88)',
+      stroke: 'rgba(150,130,190,0.2)',
+    });
+    this.text(ctx, '?', rect.x + rect.w / 2, rect.y + (compact ? 28 : 32), {
+      size: compact ? 20 : 24, weight: 800, align: 'center', color: '#8f7fb8',
+    });
+    const names = rect.options.map((id) => UNITS[id].name).join(' / ');
+    this.text(ctx, names, rect.x + rect.w / 2, rect.y + (compact ? 43 : 48), {
+      size: compact ? 8.5 : 9.5, align: 'center', color: PALETTE.uiDim, maxWidth: rect.w - 8,
+    });
+    this.text(ctx, due > 0 ? `choose in ${Math.ceil(due)}s` : 'choose now',
+      rect.x + rect.w / 2, rect.y + (compact ? 54 : 62), {
+        size: compact ? 8.5 : 9.5, align: 'center', color: '#cbb9e8', maxWidth: rect.w - 8,
+      });
+  }
+
+  /**
+   * The strain pick. Deliberately shaped like the mutation panel so the
+   * "the run stops, you commit to something" beat reads the same way.
+   */
+  drawUnitChoice(ctx) {
+    const g = this.game;
+    this.dim(ctx, 0.8);
+    this.text(ctx, 'A NEW STRAIN', g.width / 2, g.height / 2 - 168, {
+      size: 32, weight: 800, align: 'center', color: '#e8ccff',
+    });
+    this.text(ctx, 'Choose one — the other is gone for the rest of the run',
+      g.width / 2, g.height / 2 - 138, {
+        size: 15, align: 'center', color: PALETTE.uiDim, maxWidth: g.width - 60,
+      });
+
+    for (const card of this.unitChoiceRects()) {
+      const def = UNITS[card.id];
+      const hovered = this.hit(card, g.mouse);
+      this.panel(ctx, card.x, card.y, card.w, card.h, {
+        fill: hovered ? 'rgba(62,30,92,0.97)' : 'rgba(18,20,32,0.95)',
+        stroke: hovered ? 'rgba(230,170,255,0.9)' : 'rgba(160,130,210,0.35)',
+        lineWidth: hovered ? 2 : 1,
+        radius: 12,
+      });
+
+      ctx.save();
+      ctx.translate(card.x + card.w / 2, card.y + 62);
+      const scale = Math.min(1.9, 34 / def.radius);
+      ctx.scale(scale, scale);
+      drawUnit(ctx, {
+        x: 0, y: 0, facing: -0.35, gait: g.time * 4 + def.cost,
+        seed: def.cost, hitFlash: 0, attackTimer: 0, broodTimer: 0, mendTimer: 0,
+      }, def, g.time, 1);
+      ctx.restore();
+
+      this.text(ctx, def.name, card.x + card.w / 2, card.y + 118, {
+        size: 19, weight: 700, align: 'center', color: '#f0dcff', maxWidth: card.w - 24,
+      });
+      this.text(ctx, `${def.cost} Aether · ${BEHAVIOUR_LABEL[def.behavior] ?? def.behavior}`,
+        card.x + card.w / 2, card.y + 138, {
+          size: 12, align: 'center', color: '#c2a8e8', maxWidth: card.w - 24,
+        });
+      this.wrap(ctx, def.role, card.w - 34, { size: 12.5 }).forEach((line, i) => {
+        this.text(ctx, line, card.x + card.w / 2, card.y + 162 + i * 17, {
+          size: 12.5, align: 'center', color: PALETTE.uiDim,
+        });
+      });
+      this.text(ctx, `${def.maxHp} HP · ${def.damage > 0 ? `${def.damage} damage` : 'no attack'}`,
+        card.x + card.w / 2, card.y + card.h - 34, {
+          size: 11.5, align: 'center', color: PALETTE.ui, maxWidth: card.w - 24,
+        });
+      this.text(ctx, `press ${card.index + 1}`, card.x + card.w / 2, card.y + card.h - 14, {
+        size: 10.5, align: 'center', color: PALETTE.uiDim,
+      });
+    }
   }
 
   drawUnitTooltip(ctx, id, rects) {
@@ -805,6 +982,12 @@ export class Hud {
     }
     if (def.behavior === 'brood') {
       add(`Never attacks. Hatches a free Mite every ${def.attackCooldown}s and keeps ${def.standoffRange} away from the champion`);
+    }
+    if (def.behavior === 'mender') {
+      add(`Never attacks. Heals every unit within ${def.mendRadius} for ${def.mendPerSecond}/s and keeps ${def.standoffRange} away from the champion`);
+    }
+    if (def.behavior === 'artillery') {
+      add(`Lobs over terrain and splashes ${def.splashRadius} on impact — the only answer to summoned wisps`);
     }
     if (def.summonCooldown) add(`${def.summonCooldown}s summon cooldown`);
     add('Summon inside a well to garrison it');
@@ -910,6 +1093,16 @@ export class Hud {
 
     ctx.fillStyle = PALETTE.swarmGlow;
     for (const u of g.units) ctx.fillRect(mx(u.x) - 1, my(u.y) - 1, 2.2, 2.2);
+
+    ctx.fillStyle = '#ffd489';
+    for (const a of g.allies) ctx.fillRect(mx(a.x) - 1, my(a.y) - 1, 2.2, 2.2);
+
+    for (const d of g.relics) {
+      ctx.beginPath();
+      ctx.arc(mx(d.x), my(d.y), 2, 0, TAU);
+      ctx.fillStyle = d.color;
+      ctx.fill();
+    }
 
     if (g.rally) {
       ctx.strokeStyle = '#e0a8ff';
@@ -1144,65 +1337,97 @@ export class Hud {
     const bodyW = panel.w - 52;
     const page = HELP_PAGES[this.helpPage];
 
+    // Hard clip: whatever a page renders, it cannot escape the panel.
+    ctx.save();
+    roundRect(ctx, panel.x + 8, bodyY - 20, panel.w - 16, panel.y + panel.h - bodyY + 8, 10);
+    ctx.clip();
     if (page.title === 'Your units') this.drawHelpUnits(ctx, bodyX, bodyY, bodyW);
     else if (page.title === 'The champion') this.drawHelpChampion(ctx, bodyX, bodyY, bodyW);
     else this.drawHelpText(ctx, page, bodyX, bodyY, bodyW);
+    ctx.restore();
   }
 
+  /**
+   * Prose pages shrink to fit rather than running off the bottom of the panel,
+   * which is what used to happen on short windows and on the longer pages.
+   */
   drawHelpText(ctx, page, x, y, w) {
+    const panel = this.helpPanelRect();
+    const available = panel.y + panel.h - 22 - y;
+    let needed = 0;
+    for (const [, lines] of page.body) needed += 22 + lines.length * 19 + 12;
+    const k = clamp(available / Math.max(1, needed), 0.62, 1);
+
     let cursorY = y;
     for (const [heading, lines] of page.body) {
-      this.text(ctx, heading, x, cursorY, { size: 14, weight: 800, color: PALETTE.hero });
-      cursorY += 22;
+      this.text(ctx, heading, x, cursorY, { size: 14 * k, weight: 800, color: PALETTE.hero });
+      cursorY += 22 * k;
       for (const line of lines) {
-        this.text(ctx, line, x, cursorY, { size: 13, color: PALETTE.ui, maxWidth: w });
-        cursorY += 19;
+        this.text(ctx, line, x, cursorY, { size: 13 * k, color: PALETTE.ui, maxWidth: w });
+        cursorY += 19 * k;
       }
-      cursorY += 12;
+      cursorY += 12 * k;
     }
   }
 
   drawHelpUnits(ctx, x, y, w) {
     const g = this.game;
-    // Row height follows the space left in the panel, so adding a unit to the
-    // roster cannot push the last entry out of the bottom.
+    // The roster no longer fits one column on a short window, so it splits
+    // into two the moment a single column would run past the panel edge.
     const panel = this.helpPanelRect();
     const available = panel.y + panel.h - 26 - y;
-    const row = clamp(available / UNIT_ORDER.length, 42, 62);
-    const dense = row < 56;
-    let cursorY = y;
-    for (const id of UNIT_ORDER) {
+    const cols = UNIT_ORDER.length * 42 > available ? 2 : 1;
+    const perCol = Math.ceil(UNIT_ORDER.length / cols);
+    const row = clamp(available / perCol, 42, 62);
+    const colGap = 18;
+    const colW = (w - (cols - 1) * colGap) / cols;
+    const dense = cols > 1 || row < 56;
+
+    UNIT_ORDER.forEach((id, i) => {
       const def = UNITS[id];
+      const colX = x + Math.floor(i / perCol) * (colW + colGap);
+      const cursorY = y + (i % perCol) * row;
+
       ctx.save();
-      ctx.translate(x + 22, cursorY + 14);
+      ctx.translate(colX + 22, cursorY + 14);
       const scale = Math.min(1.1, 18 / def.radius);
       ctx.scale(scale, scale);
       drawUnit(ctx, {
         x: 0, y: 0, facing: -0.3, gait: g.time * 4 + def.cost,
-        seed: def.cost, hitFlash: 0, attackTimer: 0,
+        seed: def.cost, hitFlash: 0, attackTimer: 0, broodTimer: 0, mendTimer: 0,
       }, def, g.time, 1);
       ctx.restore();
 
-      const tx = x + 54;
-      this.text(ctx, `${def.name}`, tx, cursorY + 10, { size: 13.5, weight: 700, color: '#e6cbff' });
-      this.text(ctx, `${def.cost} Aether · unlocks at ${def.unlockAt}s · key ${def.hotkey}`,
-        x + w, cursorY + 10, { size: 11.5, align: 'right', color: PALETTE.uiDim });
-      this.text(ctx, def.role, tx, cursorY + 26, { size: 12, color: PALETTE.ui, maxWidth: w - 60 });
+      const tx = colX + 54;
+      const metaText = dense
+        ? `${def.cost}a · ${def.unlockAt}s`
+        : `${def.cost} Aether · unlocks at ${def.unlockAt}s · key ${def.hotkey}`;
+      const metaW = this.measure(ctx, metaText, { size: 11.5 });
+      this.text(ctx, def.name, tx, cursorY + 10, {
+        size: 13.5, weight: 700, color: '#e6cbff', maxWidth: colW - 62 - metaW,
+      });
+      this.text(ctx, metaText, colX + colW, cursorY + 10, {
+        size: 11.5, align: 'right', color: PALETTE.uiDim,
+      });
+      this.text(ctx, def.role, tx, cursorY + 26, { size: 12, color: PALETTE.ui, maxWidth: colW - 60 });
+
       let detail;
       if (def.behavior === 'support') {
         detail = `${def.maxHp} HP · aura ${def.auraRadius} · slows and marks the champion`;
       } else if (def.behavior === 'brood') {
         detail = `${def.maxHp} HP · no attack · hatches a Mite every ${def.attackCooldown}s`;
+      } else if (def.behavior === 'mender') {
+        detail = `${def.maxHp} HP · no attack · heals ${def.mendPerSecond}/s within ${def.mendRadius}`;
       } else if (def.behavior === 'ambush') {
         detail = `${def.maxHp} HP · ${def.damage} damage · ${def.ambushMultiplier}x on the ambush hit · untargetable while burrowed`;
       } else {
         detail = `${def.maxHp} HP · ${def.damage} damage · range ${def.attackRange}${def.aoeResist ? ` · ${Math.round(def.aoeResist * 100)}% ability resist` : ''}`;
       }
       if (!dense) {
-        this.text(ctx, detail, tx, cursorY + 42, { size: 11.5, color: PALETTE.uiDim, maxWidth: w - 60 });
+        this.text(ctx, detail, tx, cursorY + 42, { size: 11.5, color: PALETTE.uiDim, maxWidth: colW - 60 });
       }
-      cursorY += row;
-    }
+    });
+
     if (dense) {
       this.text(ctx, 'Hover a unit card in game for its full stat line.',
         x, panel.y + panel.h - 30, { size: 11.5, color: PALETTE.uiDim });
@@ -1245,6 +1470,19 @@ export class Hud {
       'The bright inner ring filling up is the timer. Move the beacon and your',
       'swarm walks out of it. Maulers take far less; Flingers and Mites die.',
       'Judgment deliberately targets your densest cluster — never blob under it.',
+    ]) {
+      this.text(ctx, line, x, cursorY, { size: 13, color: PALETTE.ui, maxWidth: w });
+      cursorY += 19;
+    }
+
+    cursorY += 14;
+    this.text(ctx, 'Archetypes', x, cursorY, { size: 14, weight: 800, color: PALETTE.hero });
+    cursorY += 22;
+    for (const line of [
+      'Templar tanks · Duelist swings fast · Arcanist casts wide · Huntress kites.',
+      'Summoner calls wisps that fight beside it. Wisps burn out on their own, pay',
+      'Aether when killed, and give no experience — but only a Bombardier can',
+      'reach them without your swarm walking into the champion first.',
     ]) {
       this.text(ctx, line, x, cursorY, { size: 13, color: PALETTE.ui, maxWidth: w });
       cursorY += 19;

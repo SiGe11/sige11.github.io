@@ -54,7 +54,16 @@ export const CONFIG = {
   wellCaptureTime: 4.4,
   wellUnitsToCapture: 2,
 
-  maxRelicsPerRun: 9,
+  // Battlefield drops. Killing a unit occasionally leaves something behind
+  // that the champion can walk over, so trading bodies has a second cost.
+  dropChance: 0.06,           // per unit death
+  dropPermanentShare: 0.6,    // of those drops, this share are permanent relics
+  maxRelicsPerRun: 9,         // hard cap on permanent relics
+  maxDropsOnField: 5,
+  dropLifetime: 13,
+
+  // Champion summons (Summoner class)
+  allyAetherOnKill: 7,
 
   // Upgrades
   aetherPerUpgrade: 190,
@@ -204,6 +213,26 @@ export const UNITS = {
     unlockAt: 88,
     color: '#8e2f6e',
   },
+  mender: {
+    id: 'mender',
+    name: 'Mender',
+    role: 'Never attacks. Knits the wounded swarm around it back together.',
+    hotkey: '6',
+    cost: 76,
+    maxHp: 108,
+    speed: 80,
+    damage: 0,
+    attackRange: 0,
+    attackCooldown: 1, // doubles as the mend tick
+    radius: 17,
+    xpValue: 42,
+    behavior: 'mender',
+    standoffRange: 300, // hangs back like the Matriarch; she is the investment
+    mendRadius: 155,
+    mendPerSecond: 15,
+    unlockAt: 88,
+    color: '#3fb98a',
+  },
   titan: {
     id: 'titan',
     name: 'Titan',
@@ -223,11 +252,49 @@ export const UNITS = {
     unlockAt: 105,
     color: '#e0447a',
   },
+  bombardier: {
+    id: 'bombardier',
+    name: 'Bombardier',
+    role: 'Elite siege lobber. Outranges everything and splashes on impact.',
+    hotkey: '7',
+    cost: 102,
+    maxHp: 175,
+    speed: 64,
+    damage: 52,
+    attackRange: 410,
+    attackCooldown: 2.6,
+    radius: 22,
+    xpValue: 66,
+    behavior: 'artillery',
+    projectileSpeed: 250,
+    splashRadius: 90, // the only swarm attack that can clear the champion's wisps
+    kiteRange: 250,
+    summonCooldown: 26,
+    unlockAt: 105,
+    color: '#d2762f',
+  },
 };
 
-export const UNIT_ORDER = [
-  'mite', 'flinger', 'mauler', 'burrower', 'shrieker', 'matriarch', 'titan',
+/**
+ * Action-bar slots. The first five are fixed; the last two open as a choice
+ * between two units of the same weight, picked once per run, so the late game
+ * is not the same roster every time.
+ */
+export const UNIT_SLOTS = [
+  ['mite'],
+  ['flinger'],
+  ['mauler'],
+  ['burrower'],
+  ['shrieker'],
+  ['matriarch', 'mender'],
+  ['titan', 'bombardier'],
 ];
+
+/** Every unit id, in slot order. Used for lookups, not for the action bar. */
+export const UNIT_ORDER = UNIT_SLOTS.flat();
+
+/** When slot `i` becomes available. Paired units always share an unlock time. */
+export const SLOT_UNLOCK_AT = UNIT_SLOTS.map((ids) => UNITS[ids[0]].unlockAt);
 
 /** Caps on stacking debuffs so a wall of Shriekers cannot fully lock the hero. */
 export const DEBUFF_CAPS = { slow: 0.45, mark: 0.35 };
@@ -387,6 +454,22 @@ export const HERO_CLASSES = [
     projectileSpeed: 380,
   },
   {
+    id: 'summoner',
+    name: 'Summoner',
+    blurb: 'Calls wisps to fight for it — break the summons or drown in them.',
+    mods: {
+      hpMult: 0.9,
+      damageMult: 0.84,
+      moveSpeedMult: 0.96,
+      attackRangeBonus: 100,
+    },
+    attackStyle: 'ranged',
+    weapon: 'scepter',
+    projectileSpeed: 360,
+    // Wisps arrive in pairs and expire, so the pressure comes in waves.
+    summons: { interval: 13, count: 2, max: 4, firstAt: 14 },
+  },
+  {
     id: 'huntress',
     name: 'Huntress',
     blurb: 'Kites at range, punishing to chase.',
@@ -410,6 +493,48 @@ export const HERO_RELICS = [
   { id: 'ward', name: 'Aegis Sigil', desc: '+12% max HP, heal 12%', color: '#ffe6a8', mods: { hpMult: 1.12 }, heal: 0.12 },
   { id: 'focus', name: 'Focus Lens', desc: '-10% ability cooldown', color: '#d7b6ff', mods: { abilityCooldownMult: 0.9 } },
 ];
+
+/**
+ * Short-lived pickups. These are the common drop: loud, dangerous for a few
+ * seconds, and gone again. Nothing here touches max HP — a temporary hpMult
+ * would strand the champion above its own cap when it expired.
+ */
+export const HERO_BOONS = [
+  {
+    id: 'ember', name: 'Emberdraught', desc: '+30% damage for 12s',
+    color: '#ff9a5c', duration: 12, mods: { damageMult: 1.3 },
+  },
+  {
+    id: 'quick', name: 'Quickroot', desc: '+26% move speed for 12s',
+    color: '#8ff0d8', duration: 12, mods: { moveSpeedMult: 1.26 },
+  },
+  {
+    id: 'cadence', name: 'Warsong Coil', desc: '+28% attack speed for 10s',
+    color: '#ffe08a', duration: 10, mods: { attackCooldownMult: 0.78 },
+  },
+  {
+    id: 'spark', name: 'Riftspark', desc: '-35% ability cooldown for 11s',
+    color: '#c9a4ff', duration: 11, mods: { abilityCooldownMult: 0.65 },
+  },
+  {
+    id: 'sun', name: 'Sunflask', desc: 'regenerates 16% HP over 8s',
+    color: '#b8ffa8', duration: 8, regen: 0.16,
+  },
+];
+
+/** The Summoner's wisps. Not a hero, not a unit — its own small actor. */
+export const ALLY = {
+  name: 'Wisp',
+  maxHp: 92,
+  speed: 128,
+  damage: 9,
+  attackRange: 100,
+  attackCooldown: 1.15,
+  radius: 12,
+  projectileSpeed: 330,
+  lifetime: 24, // wisps burn out, so the board cannot silently fill with them
+  color: '#ffd98a',
+};
 
 /**
  * Player upgrades. These are written to interact: Swarm Link rewards massing,
