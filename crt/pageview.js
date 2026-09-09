@@ -1,34 +1,26 @@
-/* ==========================================================================
-   Terminal mode — the site, drawn as a TUI.
+/* The site drawn as a TUI. Reads the document (page.js), paints it in a
+   box-drawing frame. Links stay real <a>, so click, middle-click and "copy
+   link address" behave as on the normal page; arrows drive the same list.
 
-   Reads the current document (page.js) and paints it inside a box-drawing
-   frame. Links stay real <a> elements, so clicking, middle-clicking and
-   "copy link address" behave exactly as they do on the normal page; the
-   arrow keys drive the same list from the keyboard.
+   Layout adapts to the tube: links are laid out first and the header keeps
+   what rows are left, dropping its lowest-ranked blocks on a short screen;
+   the link column is capped on a wide one.
 
-   The layout adapts to the tube it is given: the links are the page, so they
-   are laid out first and the header keeps whatever rows are left, dropping
-   its least important parts on a short screen. On a very wide one the link
-   column is capped so the dotted leaders stay readable.
-
-   `:` opens a vi-style command line — `:q` quits to the shell.
-   ========================================================================== */
+   `q` drops to the shell; `:` still opens a vi-style command line. */
 
 import { wrap, clip, spaced, leader, width } from './text.js';
 import { readPage, prettyUrl } from './page.js';
 
-const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   :q console   ESC exit';
-const HINT_NARROW = 'ARROWS  ENTER open  :q console  ESC exit';
+const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   Q exit   ESC escape';
+const HINT_NARROW = 'ARROWS  ENTER open  Q exit  ESC escape';
 const LIST_MAX = 100;   // columns; beyond this the leaders just get silly
 
-/**
- * The links on this page, preceded by a `..` entry whenever we are not at
- * the site root — otherwise a sub-page is a one-way trip inside the terminal.
- */
+/** The page's links, with a `..` entry first when this is not the site
+    root — otherwise a sub-page is a one-way trip. */
 function buildItems(page) {
     const root = new URL('/', location.href).href;
-    // Compare paths only: a query string or a #fragment does not make the
-    // home page a sub-page, and would otherwise add a `..` back to itself.
+    // Paths only: a query string or #fragment must not make the home page
+    // look like a sub-page and add a `..` back to itself.
     const here = new URL(location.pathname.replace(/index\.html?$/, ''), location.href).href;
     const items = [];
 
@@ -53,7 +45,7 @@ export function createPageView(screen) {
     let command = null;   // null = no command line, string = what has been typed
     let message = null;   // transient error / feedback under the frame
 
-    /* --- helpers --------------------------------------------------------- */
+    // helpers
     const inner = () => screen.cols - 2;
     const glyph = () => screen.glyphs;
     const flatten = (segs) => segs.map((s) => s.t).join('');
@@ -103,10 +95,8 @@ export function createPageView(screen) {
         ]);
     }
 
-    /**
-     * The slice of links to show, kept around the selection so a page with
-     * more links than rows still scrolls sensibly.
-     */
+    /** The slice to show, kept around the selection so more links than
+        rows still scrolls sensibly. */
     function itemWindow(max) {
         if (items.length <= max) return { start: 0, list: items };
         const start = Math.min(
@@ -116,10 +106,8 @@ export function createPageView(screen) {
         return { start, list: items.slice(start, start + max) };
     }
 
-    /**
-     * Header blocks in display order, each with a rank saying how readily it
-     * may be dropped when the screen is short (0 = never).
-     */
+    /** Header blocks in display order; `rank` is how readily each may be
+        dropped on a short screen (0 = never). */
     function headerBlocks(indent) {
         const blocks = [
             { rank: 3, lines: [[]] },
@@ -141,7 +129,7 @@ export function createPageView(screen) {
         return blocks.map((block, order) => ({ ...block, order }));
     }
 
-    /* --- drawing --------------------------------------------------------- */
+    // drawing
     function draw() {
         const contentRows = Math.max(4, screen.rows - 3);   // title, bottom, status
         const listWidth = Math.max(24, Math.min(inner() - 4, LIST_MAX));
@@ -193,7 +181,7 @@ export function createPageView(screen) {
         return line;
     }
 
-    /* --- behaviour ------------------------------------------------------- */
+    // behaviour
     function move(delta) {
         if (!items.length) return;
         selected = (selected + delta + items.length) % items.length;
@@ -220,7 +208,7 @@ export function createPageView(screen) {
             return;
         }
         if (cmd === 'h' || cmd === 'help') {
-            message = 'Arrow keys move, ENTER opens, :q drops to the console.';
+            message = 'Arrow keys move, ENTER opens, q drops to the console.';
         } else if (cmd === '') {
             message = null;
         } else {
@@ -260,6 +248,8 @@ export function createPageView(screen) {
                 selected = Math.max(0, items.length - 1); draw(); return true;
             case 'Enter': case ' ':
                 activate(); return true;
+            case 'q': case 'Q':
+                screen.showShell(); return true;
             case ':':
                 command = ''; message = null; draw(); return true;
             case 'Backspace':

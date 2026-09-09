@@ -1,9 +1,5 @@
-/* ==========================================================================
-   Terminal mode — reading the page.
-
-   The terminal renders whatever the current document already says, so the
-   two views never drift apart: edit index.html and the CLI follows.
-   ========================================================================== */
+/* Reads the current document, so the two views cannot drift: edit
+   index.html and the terminal follows. */
 
 /** Structured data the site already publishes, if present. */
 function readJsonLd() {
@@ -24,11 +20,8 @@ function isExternal(anchor) {
     }
 }
 
-/**
- * Short, human display form of a URL: "github.com/SiGe11".
- * Query strings are dropped — tracking parameters are noise on screen, and
- * the anchor still carries the full href.
- */
+/** Display form of a URL: "github.com/SiGe11". Query strings dropped —
+    noise on screen, and the anchor still carries the full href. */
 export function prettyUrl(href) {
     try {
         const url = new URL(href, location.href);

@@ -48,7 +48,7 @@ h2 {
     margin-top: 0;
     margin-bottom: 1rem;
     font-weight: 400;
-    color: #3498db;
+    color: #26719f;
 }
 
 ul {
@@ -68,7 +68,7 @@ a {
 }
 
 a:hover {
-    color: #3498db;
+    color: #26719f;
 }
 
 @keyframes fadeInUp {

@@ -1,13 +1,7 @@
-/* ==========================================================================
-   Terminal mode — visual layer.
-   Everything here is scoped to .crt-trigger / .crt so the module can be
-   dropped in or removed without touching the site's own stylesheet.
-   ========================================================================== */
+/* Visual layer. All of it scoped to .crt-trigger / .crt, so the module
+   drops in or out without touching the site's own stylesheet. */
 
-/* --------------------------------------------------------------------------
-   The trigger glyph (bottom-left of the normal site)
-   Injected by boot.js, so it never exists without JavaScript.
-   -------------------------------------------------------------------------- */
+/* Trigger glyph, bottom-left. Injected by boot.js: never exists w/o JS. */
 .crt-trigger {
     position: fixed;
     bottom: 1.35rem;
@@ -50,8 +44,7 @@
     background-color: rgba(52, 152, 219, 0.07);
 }
 
-/* Kept as its own rule: a browser that does not know :focus-visible would
-   otherwise drop the :hover styles along with it. */
+/* Its own rule: a browser without :focus-visible would drop :hover too. */
 .crt-trigger:focus-visible {
     opacity: 1;
     color: #3498db;
@@ -74,13 +67,11 @@
     50%, 100% { opacity: 0; }
 }
 
-/* --------------------------------------------------------------------------
-   The screen
-   -------------------------------------------------------------------------- */
+/* The screen */
 .crt {
     --crt-bg: #060a07;
     --crt-fg: #35ff6a;
-    --crt-dim: #1c7f3c;
+    --crt-dim: #1f8f3f;
     --crt-bright: #c9ffd8;
     --crt-warn: #ffd166;
     --crt-pad: 26px;
@@ -97,7 +88,8 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
                  "DejaVu Sans Mono", "Liberation Mono", monospace;
     font-size: 15px;
-    line-height: 1.32;
+    --crt-line: 1.32;
+    line-height: var(--crt-line);
     font-variant-ligatures: none;
 
     overflow: hidden;
@@ -114,7 +106,7 @@
 
 .crt.is-on { opacity: 1; }
 
-/* Layers ------------------------------------------------------------------ */
+/* Layers */
 .crt__screen {
     position: absolute;
     top: 0;
@@ -163,8 +155,7 @@
 }
 
 .crt__buffer {
-    /* Restated: the user-agent's own `pre` rule overrides a family inherited
-       from .crt, which would leave the grid in the browser's default mono. */
+    /* Restated: the UA `pre` rule beats a family inherited from .crt. */
     font-family: inherit;
     font-size: inherit;
     line-height: inherit;
@@ -308,8 +299,41 @@
     animation: crt-flicker 4.1s steps(3, end) infinite;
 }
 
-/* Text roles --------------------------------------------------------------- */
-.crt-dim    { color: var(--crt-dim); text-shadow: 0 0 5px rgba(28, 127, 60, 0.35); }
+.crt__exit,
+.crt__intro {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Visible once focused. `:active` is load-bearing: Safari does not focus a
+   button on mousedown, so on :focus alone this would shrink back to a pixel
+   between press and release and the click would never complete. */
+.crt__exit:focus,
+.crt__exit:active {
+    z-index: 5;
+    top: 14px;
+    left: 14px;
+    width: auto;
+    height: auto;
+    padding: 8px 14px;
+    clip-path: none;
+    border: 1px solid var(--crt-fg);
+    border-radius: 4px;
+    background: var(--crt-bg);
+    color: var(--crt-fg);
+    font: inherit;
+    cursor: pointer;
+}
+
+/* Text roles */
+.crt-dim    { color: var(--crt-dim); text-shadow: 0 0 5px rgba(31, 143, 63, 0.35); }
 .crt-bright { color: var(--crt-bright); text-shadow: 0 0 2px rgba(201, 255, 216, 0.9), 0 0 10px rgba(53, 255, 106, 0.45); }
 .crt-warn   { color: var(--crt-warn); text-shadow: 0 0 6px rgba(255, 209, 102, 0.45); }
 
@@ -319,8 +343,23 @@
     cursor: pointer;
 }
 
-/* Inverse-video selection, the way a real TUI highlights a row.
-   Scoped under .crt so it outranks the `.crt a { color: inherit }` above. */
+/* Mouse pointer, document view only (data-view is set in crt.js): a block
+   one cell in size, as Midnight Commander shows the mouse. The console keeps
+   an ordinary pointer, and .is-idle hides it when the mouse stops.
+   PNG, not SVG: Safari rejects an SVG cursor and falls back to the arrow.
+   Hotspot is centred so the block covers the cell being pointed at. */
+.crt[data-view="page"].is-idle,
+.crt[data-view="page"].is-idle a {
+    cursor: none;
+}
+
+.crt[data-view="page"],
+.crt[data-view="page"] a {
+    cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAUCAYAAAC07qxWAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAhElEQVQoz2NgEOKUZtcSWs+mLviETVXgBQoGirFrCa9jEOaUYgAq2iA7zf6R8Y/0Syb/sy4iY5CY7GTbh2DFbBqCT7EpQlYMUsPApib4EpciGAapGVU4qhCLQmKSGTABM4ASJShx4ky4E20eAdWsZQAlcxCDHWgyUOcrZAwSA8qtAakBAJGWlfkwbHN1AAAAAElFTkSuQmCC") 5 10, default;
+}
+
+/* Inverse-video row selection. Scoped under .crt so it outranks
+   `.crt a { color: inherit }` above. */
 .crt .crt-sel {
     background: var(--crt-fg);
     color: #04170b;
@@ -330,14 +369,21 @@
 }
 
 .crt .crt-cursor {
+    /* Solid oblong covering one cell, as in Midnight Commander. Wraps
+       exactly one glyph, so it takes a normal advance and shifts nothing. */
+    display: inline-block;
+    /* No width: shrink-wrap is exact, 1ch rounds a fraction off. */
+    height: calc(var(--crt-line) * 1em);
+    line-height: calc(var(--crt-line) * 1em);
+    vertical-align: top;
+    border-radius: 2px;
     background: var(--crt-fg);
     color: #04170b;
     text-shadow: none;
-    box-shadow: 0 0.16em 0 var(--crt-fg), 0 -0.16em 0 var(--crt-fg);
     animation: crt-trigger-blink 1s step-end infinite;
 }
 
-/* Animations --------------------------------------------------------------- */
+/* Animations */
 @keyframes crt-jitter {
     0%   { transform: translate(0, 0); }
     25%  { transform: translate(0.35px, -0.3px); }
@@ -372,8 +418,7 @@
 }
 
 /* Power on / off: the tube collapses to a line, then to a dot. */
-/* The tube striking: a point of light, drawn out to a line, opened into a
-   picture that overshoots and settles. */
+/* The strike: a point of light, drawn to a line, opened into a picture. */
 @keyframes crt-power-on {
     0%   { transform: scale(0.002, 0.002); filter: brightness(16) saturate(0); opacity: 0; }
     6%   { transform: scale(0.35, 0.003);  filter: brightness(16) saturate(0); opacity: 1; }

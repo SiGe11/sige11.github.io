@@ -1,17 +1,5 @@
-/* ==========================================================================
-   Terminal mode — the virtual file system.
-
-   Five entries live in ~ :
-
-       about.txt    who Gergely Simon is
-       site.sh      render sige25.dev in the terminal again
-       legacy.sh    drop terminal mode, back to the normal site
-       swarm.exe    launch the Swarm vs Hero game
-       writeup.sh   open the Funpage write-up
-
-   Add a file by pushing one more object into `entries` below; the shell
-   picks it up for ls / cat / echo / tab-completion automatically.
-   ========================================================================== */
+/* The virtual file system. Add a file by pushing one more object into
+   `entries` below; the shell picks it up for ls / cat / echo / completion. */
 
 import { wrap, leader, clip } from './text.js';
 import { readPage, prettyUrl } from './page.js';
@@ -19,22 +7,17 @@ import { readPage, prettyUrl } from './page.js';
 const SWARM_URL = '/swarmvshero/';
 const WRITEUP_URL = '/content/writeups/funpage/';
 
-/**
- * Both destinations are pages of this same site, so they open in this tab —
- * the visitor keeps control of their own tabs and the back button still
- * works. Terminal mode is remembered, so coming back lands here again.
- * (External links, in the page view, still open in a new tab: that is what
- * the site's own markup asks for.)
- */
+/** Same-site pages, so: this tab. The visitor keeps control of their tabs
+    and Back still works, and terminal mode is the default so coming back
+    lands here again. External links in the page view still open a new tab —
+    that is what the site's own markup asks for. */
 function launch(screen, url, line) {
     setTimeout(() => screen.navigate(url), 420);   // let the line land first
     return [line];
 }
 
-/* --------------------------------------------------------------------------
-   about.txt — the one place to edit what the terminal says about you.
-   The links underneath are read from the page, so they never go stale.
-   -------------------------------------------------------------------------- */
+/* about.txt — the one place to edit it. The links under it are read from
+   the page, so they never go stale. */
 const PROFILE = {
     name: 'Gergely Simon',
     tagline: 'back-end developer · cybersecurity',

@@ -1,39 +1,35 @@
-/* ==========================================================================
-   Terminal mode — the screen itself.
-
-   Owns the overlay, the character grid, the key routing and the transitions.
-   It knows nothing about the site's content: that lives in pageview.js,
-   shell.js and vfs.js, which it drives through a small `screen` interface.
-   ========================================================================== */
+/* The screen: overlay, character grid, key routing, transitions. Knows
+   nothing about the site's content — pageview.js, shell.js and vfs.js do,
+   and this drives them through the `screen` interface at the bottom. */
 
 import { segments, pad, setEllipsis } from './text.js';
 import { buildVfs } from './vfs.js';
 import { createPageView } from './pageview.js';
 import { createShell } from './shell.js';
-
-const SESSION_KEY = 'sige.crt';
+import { markBooted } from './mode.js';
 
 /* φωσφόρος — light-bearer. What a green screen is, literally. */
 const SYSTEM = 'PhosphorOs';
 
-/* Box drawing keeps the grid honest only while every glyph occupies exactly
-   one cell. Menlo, Consolas and DejaVu Sans Mono all do; if the visitor's
-   monospace font falls back to something that does not, we drop to ASCII
-   rather than let the frame come apart. */
+/* Box drawing holds the grid together only while every glyph is one cell
+   wide. If the rendering font disagrees, measure() falls back to ASCII. */
 const GLYPHS_UNICODE = { tl: '┌', tr: '┐', bl: '└', br: '┘', h: '─', v: '│', ell: '…' };
 const GLYPHS_ASCII   = { tl: '+', tr: '+', bl: '+', br: '+', h: '-', v: '|', ell: '.' };
 const GLYPH_SAMPLE = '┌┐└┘─│…';
 
-/* How much the tube bulges. 0 disables it entirely; much above 0.03 and the
-   frame starts reading as a trapezoid rather than curved glass. */
+/* Tube bulge. 0 disables it; above ~0.03 it reads as a trapezoid. */
 const CURVE = 0.011;
 
 const MARKUP = `
+<button type="button" class="crt__exit">Leave terminal mode</button>
+<p class="crt__intro" id="crt-intro">Terminal mode: the page drawn as a text
+console. Arrow keys move between links, Enter opens one, q drops to a command
+prompt, Escape leaves terminal mode and shows the standard page.</p>
 <div class="crt__screen">
   <div class="crt__jitter">
     <div class="crt__hold">
       <div class="crt__glitch">
-        <pre class="crt__buffer" aria-live="polite"></pre>
+        <pre class="crt__buffer"></pre>
       </div>
     </div>
   </div>
@@ -62,22 +58,14 @@ let instance = null;
 const reducedMotion = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function setSession(on) {
-    try {
-        if (on) sessionStorage.setItem(SESSION_KEY, '1');
-        else sessionStorage.removeItem(SESSION_KEY);
-    } catch (_) { /* private mode: mode simply will not survive navigation */ }
-}
-
-/* -------------------------------------------------------------------------
-   Screen
-   ------------------------------------------------------------------------- */
+/* Screen */
 function createScreen() {
     const root = document.createElement('div');
     root.className = 'crt';
     root.tabIndex = -1;
     root.setAttribute('role', 'application');
     root.setAttribute('aria-label', 'Terminal mode');
+    root.setAttribute('aria-describedby', 'crt-intro');
     root.innerHTML = MARKUP;
 
     const buffer = root.querySelector('.crt__buffer');
@@ -96,9 +84,9 @@ function createScreen() {
         buffer.appendChild(probe);
 
         // offsetWidth, not getBoundingClientRect: the latter reports the
-        // *transformed* box, and the power-on animation scales this subtree
-        // horizontally — measuring mid-animation would inflate every cell.
-        // A long run keeps the integer rounding down in the noise.
+        // transformed box, and the power-on animation scales this subtree,
+        // so a mid-animation measure would inflate every cell. The long run
+        // keeps integer rounding in the noise.
         const advance = (text, times) => {
             probe.textContent = text.repeat(times);
             return probe.offsetWidth / (text.length * times);
@@ -150,10 +138,9 @@ function createScreen() {
                 node.textContent = text;
                 row.appendChild(node);
             }
-            // Barrel distortion, one row at a time: rows away from the middle
-            // sit narrower and closer in, the way a curved tube presents them.
-            // Done with transforms rather than a filter so hit-testing curves
-            // with the picture and the links stay exactly where they look.
+            // Barrel distortion per row. Transforms, not a filter, so
+            // hit-testing curves with the picture and links stay clickable
+            // where they look.
             if (CURVE && limit > 2) {
                 const mid = (limit - 1) / 2;
                 const n = (i - mid) / mid;
@@ -178,13 +165,18 @@ function createScreen() {
     function setView(next) {
         if (view && view.leave) view.leave();
         view = next;
+        // The stylesheet keys off this: the document view gets the block
+        // mouse pointer, the console keeps an ordinary one.
+        root.dataset.view = view.name || '';
         if (view.enter) view.enter();
         draw();
     }
 
-    /* --- input ---------------------------------------------------------- */
+    // input
     function onKeyDown(event) {
         if (closing) return;
+        // The exit control is a plain button: let the browser drive it.
+        if (event.target && event.target.closest && event.target.closest('.crt__exit')) return;
         if (event.metaKey || event.altKey) return;           // leave browser shortcuts alone
         if (event.ctrlKey && !'lLcCuUaAeEkK'.includes(event.key)) return;
 
@@ -203,6 +195,14 @@ function createScreen() {
         if (view && view.wheel) view.wheel(event);
     }
 
+    /* A mouse left alone gets out of the way; movement brings it back. */
+    let idleTimer = 0;
+    function onMouseMove() {
+        root.classList.remove('is-idle');
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => root.classList.add('is-idle'), 1600);
+    }
+
     let resizeTimer = 0;
     let observer = null;
 
@@ -215,11 +215,8 @@ function createScreen() {
         }, 120);
     }
 
-    /**
-     * One more look once the first frame is on screen. Cheap insurance
-     * against measuring a layout that was not quite final — a late webfont,
-     * or a stylesheet that landed a tick after the screen was built.
-     */
+    /** Re-measure once the first frame is up: the layout may not have been
+        final (late webfont, stylesheet landing a tick after the screen). */
     function settle() {
         const recheck = () => {
             const before = cols + 'x' + rows;
@@ -233,19 +230,16 @@ function createScreen() {
         }
     }
 
-    /**
-     * Watching the buffer itself catches everything the window resize event
-     * misses: browser zoom, a font that arrives late, and the case where the
-     * screen is measured before it has been laid out (a background tab), which
-     * would otherwise leave the grid stuck at its minimum size.
-     */
+    /** Catches what `resize` misses: browser zoom, a late font, and a
+        screen measured before layout (background tab), which would leave
+        the grid stuck at its minimum. */
     function watchSize() {
         if (typeof ResizeObserver !== 'function') return;
         observer = new ResizeObserver(onResize);
         observer.observe(buffer);
     }
 
-    /* --- lifecycle ------------------------------------------------------ */
+    // lifecycle
     function mount() {
         for (const node of Array.from(document.body.children)) {
             if (node === root) continue;
@@ -255,10 +249,14 @@ function createScreen() {
         document.body.appendChild(root);
         document.documentElement.style.overflow = 'hidden';
 
+        root.querySelector('.crt__exit')
+            .addEventListener('click', () => screen.close());
         document.addEventListener('keydown', onKeyDown, true);
         buffer.addEventListener('mouseover', onPointerOver);
+        root.addEventListener('mousemove', onMouseMove);
         root.addEventListener('wheel', onWheel, { passive: true });
         window.addEventListener('resize', onResize);
+        onMouseMove();                       // start the idle countdown
 
         measure();
         watchSize();
@@ -268,8 +266,10 @@ function createScreen() {
     function unmount() {
         document.removeEventListener('keydown', onKeyDown, true);
         buffer.removeEventListener('mouseover', onPointerOver);
+        root.removeEventListener('mousemove', onMouseMove);
         root.removeEventListener('wheel', onWheel);
         window.removeEventListener('resize', onResize);
+        clearTimeout(idleTimer);
         if (observer) { observer.disconnect(); observer = null; }
         clearTimeout(resizeTimer);
 
@@ -281,7 +281,7 @@ function createScreen() {
         siblings.length = 0;
     }
 
-    /* --- public interface ----------------------------------------------- */
+    // public interface
     const screen = {
         cols,
         rows,
@@ -305,17 +305,14 @@ function createScreen() {
                 window.open(href, '_blank', 'noopener,noreferrer');
                 return;
             }
-            // Terminal mode is carried across same-site navigation unless the
-            // destination is a page that does not load this module.
-            setSession(options.keepMode !== false);
-            window.location.href = href;
+            window.location.href = href;   // the default carries it across
         },
 
         /** Power the tube back down and hand the visitor the normal site. */
         close() {
             if (closing) return;
             closing = true;
-            setSession(false);
+            // Not remembered: the next page load starts the tube again.
 
             const finish = () => {
                 unmount();
@@ -349,9 +346,7 @@ function createScreen() {
     return screen;
 }
 
-/* -------------------------------------------------------------------------
-   Boot sequence — a short power-on crawl, skippable with any key.
-   ------------------------------------------------------------------------- */
+/* Boot sequence — a short power-on crawl, skippable with any key. */
 function createBootView(screen, done) {
     const lines = bootLines();
     let shown = 0;
@@ -375,6 +370,7 @@ function createBootView(screen, done) {
     }
 
     return {
+        name: 'boot',
         enter() { timer = setTimeout(step, 900); },   // let the tube warm up first
         leave() { clearTimeout(timer); },
         draw() {
@@ -384,9 +380,7 @@ function createBootView(screen, done) {
     };
 }
 
-/* -------------------------------------------------------------------------
-   Entry point
-   ------------------------------------------------------------------------- */
+/* Entry point */
 export function open(options = {}) {
     if (instance) return instance;
 
@@ -394,13 +388,12 @@ export function open(options = {}) {
     instance = screen;
     screen.vfs = buildVfs(screen);
     screen.mount();
-    setSession(true);
 
     const instant = options.instant === true || reducedMotion();
+    markBooted();
 
-    // Flush layout so the power-on animation starts from its first keyframe.
-    // (rAF would be tidier, but it never fires while the tab is hidden, which
-    // would leave the screen mounted and invisible.)
+    // Flush layout so the animation starts at its first keyframe. Not rAF:
+    // it never fires in a hidden tab, leaving the screen mounted and invisible.
     void screen.root.offsetWidth;
     screen.root.classList.add('is-on');
     if (!instant) screen.root.classList.add('is-powering-on');

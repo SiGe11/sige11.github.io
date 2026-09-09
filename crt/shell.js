@@ -1,10 +1,6 @@
-/* ==========================================================================
-   Terminal mode — the console you land in after `:q`.
-
-   A small, deliberately old-fashioned shell over the virtual file system in
-   vfs.js. New commands go in the COMMANDS table at the bottom; new files go
-   in vfs.js and are picked up here for free (listing, cat, completion).
-   ========================================================================== */
+/* The console, reached with `q`. A small shell over the vfs in vfs.js.
+   New commands go in COMMANDS below; new files go in vfs.js and are picked
+   up here for free (listing, cat, completion). */
 
 import { clip } from './text.js';
 
@@ -20,7 +16,7 @@ export function createShell(screen, options = {}) {
     let caret = 0;
     let scroll = 0;            // lines scrolled back from the bottom
 
-    /* --- output ---------------------------------------------------------- */
+    // output
     const print = (...lines) => {
         for (const line of lines) output.push(line);
         scroll = 0;
@@ -34,7 +30,7 @@ export function createShell(screen, options = {}) {
         );
     }
 
-    /* --- file helpers ---------------------------------------------------- */
+    // file helpers
     function readFile(name, verb) {
         const entry = screen.vfs.find(name);
         if (!entry) {
@@ -60,7 +56,7 @@ export function createShell(screen, options = {}) {
         return true;
     }
 
-    /* --- commands -------------------------------------------------------- */
+    // commands
     const COMMANDS = {
         help: () => {
             print({ t: 'COMMANDS', c: 'crt-dim' });
@@ -142,8 +138,8 @@ export function createShell(screen, options = {}) {
     COMMANDS['?'] = COMMANDS.help;
     COMMANDS.man = COMMANDS.help;
 
-    /* Every command the shell answers to, aliases named on the right.
-       Anything added to COMMANDS above belongs here too. */
+    /* Every command, aliases on the right. Anything added to COMMANDS
+       above belongs here too. */
     const HELP = [
         ['help', 'this list — also ? and man'],
         ['ls [-a] [-l]', 'list the files in this directory'],
@@ -157,7 +153,7 @@ export function createShell(screen, options = {}) {
         ['exit', 'leave terminal mode — also quit, :q, ./legacy.sh'],
     ];
 
-    /* --- the read-eval loop ---------------------------------------------- */
+    // the read-eval loop
     function submit() {
         const raw = input;
         print([{ t: prompt, c: 'crt-dim' }, { t: raw }]);
@@ -183,8 +179,8 @@ export function createShell(screen, options = {}) {
             }
         }
         historyIndex = history.length;
-        // A command may have handed the screen to another view (site.sh), so
-        // redraw whatever is active now rather than this shell unconditionally.
+        // A command may have handed the screen to another view (site.sh):
+        // redraw whatever is active now, not this shell.
         screen.redraw();
     }
 
@@ -219,7 +215,7 @@ export function createShell(screen, options = {}) {
         draw();
     }
 
-    /* --- drawing --------------------------------------------------------- */
+    // drawing
     function promptLine() {
         const before = input.slice(0, caret);
         const at = input.slice(caret, caret + 1) || ' ';
@@ -242,16 +238,15 @@ export function createShell(screen, options = {}) {
         screen.render(lines.map((l) => screen.pad(l)));
     }
 
-    /* --- input ----------------------------------------------------------- */
+    // input
     function key(event) {
         const k = event.key;
 
         if (event.ctrlKey) {
             if (k === 'l' || k === 'L') { output.length = 0; draw(); return true; }
             if (k === 'c' || k === 'C') {
-                // Ctrl+C is also the copy key outside macOS. With something
-                // selected on screen the visitor means "copy": hand the key
-                // to the browser instead of interrupting the line.
+                // Ctrl+C is the copy key outside macOS. With a selection on
+                // screen the visitor means copy: let the browser have it.
                 const selection = window.getSelection && window.getSelection();
                 if (selection && !selection.isCollapsed && String(selection)) return false;
                 print([{ t: prompt, c: 'crt-dim' }, { t: input }, { t: '^C', c: 'crt-warn' }]);

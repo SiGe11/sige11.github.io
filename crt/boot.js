@@ -1,23 +1,17 @@
-/* ==========================================================================
-   Terminal mode — entry point.
+/* Entry point — the only file the site references. Decides whether this
+   machine gets terminal mode, injects the trigger glyph, lazy-loads the rest.
 
-   This is the only file the site itself references. It decides whether the
-   machine in front of us should be offered terminal mode at all, injects the
-   trigger glyph, and lazy-loads the rest of the module on first use.
+   Desktop: terminal mode is what the visitor gets. Leaving it lasts until
+   the next page load. No JS: this never runs. Touch or small: nothing is
+   injected and no stylesheet is requested. */
 
-   No JavaScript  -> this file never runs, so no glyph is ever rendered.
-   Touch / small   -> the glyph is not injected either.
-   ========================================================================== */
+import { bootedBefore } from './mode.js';
 
 const MODULE_BASE = new URL('.', import.meta.url);
-const SESSION_KEY = 'sige.crt';
 const MIN_WIDTH = 760;
 const MIN_HEIGHT = 480;
 
-/**
- * Terminal mode is keyboard-driven and assumes a roomy, precise pointer.
- * Anything phone-shaped or touch-first is deliberately left out.
- */
+/** Keyboard-driven and pointer-hungry: phone-shaped or touch-first is out. */
 function isEligible() {
     if (typeof window.matchMedia !== 'function') return false;
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return false;
@@ -29,11 +23,8 @@ function isEligible() {
 
 let stylesReady = null;
 
-/**
- * The screen measures itself in character cells, so it must not be built
- * before crt.css has actually been applied — an unstyled measurement yields
- * the wrong column count and the frame comes up too narrow.
- */
+/** The screen measures itself in cells, so it must not be built before
+    crt.css applies — an unstyled measure gives too few columns. */
 function loadStyles() {
     if (stylesReady) return stylesReady;
     if (document.getElementById('crt-styles')) {
@@ -81,27 +72,21 @@ function injectTrigger() {
     button.title = 'Terminal mode';
     button.setAttribute('aria-label', 'Switch to terminal mode');
     button.innerHTML = ICON;
+    // Asking for it by hand earns the full power-on.
     button.addEventListener('click', () => start({ instant: false }));
     document.body.appendChild(button);
     return button;
 }
 
 function init() {
-    if (!isEligible()) {
-        // Drop a flag left behind by a window that has since been resized or
-        // handed to a touch device, so terminal mode cannot resume by surprise.
-        try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
-        return;
-    }
+    if (!isEligible()) return;
 
     loadStyles();
     injectTrigger();
 
-    // Terminal mode survives navigation between pages of the site, so that
-    // following a link from inside the terminal does not drop you out of it.
-    let resumed = false;
-    try { resumed = sessionStorage.getItem(SESSION_KEY) === '1'; } catch (_) { /* private mode */ }
-    if (resumed) start({ instant: true });
+    // The crawl is worth watching once; after that, following a link inside
+    // the terminal should just land in the terminal.
+    start({ instant: bootedBefore() });
 }
 
 if (document.readyState === 'loading') {

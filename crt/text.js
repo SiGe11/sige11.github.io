@@ -1,14 +1,6 @@
-/* ==========================================================================
-   Terminal mode — text/line helpers.
-
-   A "line" is an array of segments. A segment is either a plain string or
-   an object:
-
-       { t: 'text', c: 'crt-dim', href: '...', external: true, id: 'link-2' }
-
-   The renderer in crt.js turns segments into <span>/<a> nodes; everything
-   else in the module only ever builds these small plain objects.
-   ========================================================================== */
+/* Text/line helpers. A "line" is an array of segments; a segment is a
+   plain string or { t, c?, href?, external?, index? }. crt.js renders them
+   as <span>/<a>; everything else only ever builds these objects. */
 
 /** Normalise a line into an array of segment objects. */
 export function segments(line) {
@@ -31,8 +23,7 @@ export function pad(line, cols) {
     return gap > 0 ? segs.concat([{ t: ' '.repeat(gap) }]) : segs;
 }
 
-/* The cut marker. crt.js swaps it for '.' when the rendering font turns out
-   not to carry '…' at the same advance width as the rest of the grid. */
+/* Cut marker. crt.js swaps it for '.' when the font's '…' is not one cell. */
 let ellipsis = '…';
 
 /** Choose the character used to mark a truncated string. */
