@@ -66,15 +66,15 @@
                     <pre><code>sudo nmap -sS $IP</code></pre>
                 </div>
                 <p>The result:</p>
-                <img src="images/nmap.png" alt="Nmap output" class="img-fluid writeup-img mb-4">
+                <img src="images/nmap.png" width="1610" height="458" alt="Nmap output" class="img-fluid writeup-img mb-4">
                 <p>From the scan, we see that two ports are open: SSH and HTTP.</p>
 
                 <h2>What is the username?</h2>
                 <p>Let’s explore the target. We saw that there is an HTTP server running on it. Check this on:
                 <i>http://$IP/</i></p>
-                <img src="images/main-page.png" alt="Main page" loading="lazy" class="img-fluid writeup-img mb-4">
+                <img src="images/main-page.png" width="1667" height="812" alt="Main page" loading="lazy" class="img-fluid writeup-img mb-4">
                 <p>Nothing obvious stands out. Maybe we should inspect the page’s source code:</p>
-                <img src="images/main-source.png" alt="Main page source" loading="lazy" class="img-fluid writeup-img mb-4">
+                <img src="images/main-source.png" width="2926" height="1190" alt="Main page source" loading="lazy" class="img-fluid writeup-img mb-4">
                 <p>Interesting. There is a huge blob of base64 encoded image. Make a note of it, maybe we should check
                 this later for hidden infos.</p>
                 <p>But first let's do a site discovery:</p>
@@ -84,7 +84,7 @@
                 </div>
                 <p>We can see that there is an additional directory on the server: <i>/dev</i></p>
                 <p>It contains a list, that seems not useful for us. But check the source code:</p>
-                <img src="images/dev-source.png" alt="Subpage source" loading="lazy" class="img-fluid writeup-img mb-4">
+                <img src="images/dev-source.png" width="1844" height="390" alt="Subpage source" loading="lazy" class="img-fluid writeup-img mb-4">
                 <p>We see a base64 encoded text. We should decode it:</p>
                 <div class="code-block">
                     <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
@@ -103,7 +103,7 @@
                     <pre><code>hydra -l REDACTED -P ./SecLists/Passwords/Leaked-Databases/rockyou.txt.tar.gz $IP ssh</code></pre>
                 </div>
                 <p>Indeed, we have a password:</p>
-                <img src="images/hydra.jpg" alt="Hydra output" loading="lazy" class="img-fluid writeup-img mb-4">
+                <img src="images/hydra.jpg" width="3294" height="492" alt="Hydra output" loading="lazy" class="img-fluid writeup-img mb-4">
                 Let's access the machine:
                 <div class="code-block">
                     <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
@@ -120,9 +120,9 @@
                     <pre><code>sudo -l</code></pre>
                 </div>
                 <p>And we have:</p>
-                <img src="images/sudo.jpg" alt="sudo rights" loading="lazy" class="img-fluid writeup-img mb-4">
+                <img src="images/sudo.jpg" width="1080" height="113" alt="sudo rights" loading="lazy" class="img-fluid writeup-img mb-4">
                 <p>The user can run <i>nano</i> as root. Let's check how to exploit it in
-                    <a href="https://gtfobins.github.io/gtfobins/nano/" target="_blank">GTFOBins</a>. Following the
+                    <a href="https://gtfobins.github.io/gtfobins/nano/" target="_blank" rel="noopener">GTFOBins</a>. Following the
                 instructions in there we can get us a root shell, and check the root flag in the root directory.</p>
                 <br/>
                 <p><a href="https://sige25.dev">SiGe</a></p>
@@ -133,10 +133,31 @@
 <script>
     function copyToClipboard(button) {
         const code = button.nextElementSibling.innerText;
-        navigator.clipboard.writeText(code).then(() => {
-            button.textContent = 'Copied!';
+        const done = (label) => {
+            button.textContent = label;
             setTimeout(() => button.textContent = 'Copy', 2000);
-        });
+        };
+        // The Clipboard API needs a secure context and can still reject
+        // (an unfocused document, for instance), so fall back rather than
+        // leaving the button silently dead.
+        const legacy = () => {
+            const field = document.createElement('textarea');
+            field.value = code;
+            field.setAttribute('readonly', '');
+            field.style.position = 'fixed';
+            field.style.top = '-1000px';
+            document.body.appendChild(field);
+            field.select();
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            field.remove();
+            done(ok ? 'Copied!' : 'Press Ctrl+C');
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(() => done('Copied!'), legacy);
+        } else {
+            legacy();
+        }
     }
 </script>
 </body>

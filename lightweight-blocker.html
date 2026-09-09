@@ -10,11 +10,7 @@
     <link href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAQAAADZc7J/AAABvklEQVRIx+3UPUhVcRgG8N+VMnBqCcwhygY3IWpoiJKWbGjIvogwagiUSxINNRQYZA5JDUUNBS0OBmapS1MfcAsKJCiXvJVEIXEhykQU7Xpuy8F7rvfovRk0+Uzvef7/87zP+8GfFfwzEjFcg2ZwydflSDaaEQgEph0vfb2iiDlqdRgFfi1HII/3BkoLrCpihsIOFGKnTl+Qwz5J3Ys7uOU6GHElwrbqVq3aek9MRFtf7OCErcZ0uVHA1nmhAbxcrAdJWWu0uWOXGldtK7iX8WE+zsU7OKgCx1QgoVK/I5Fs34w5A0adkosTSGC7DfPfNXo9kJCTddYnp3HIW2n90nHzeC7QGq7QhKdhFAgM69Ck1m1Zk5pULT1G+Gi3A9qs88Yjm23R5J16aXR4ZSpOILdApE8fdmjGhBRS4Um7e14v7aA+zHHToDl7bCo4HdcT99MzgcMmI7UHsi7gYQEXGIrfAxhwecGWbFQC+RIuShnUowXM6jESGWoZqHItYvMHRgXulioh72DKOcPqnPdYr9ly80Z7MOezGfw27X7I1Vpbbg9okfTdfnt1aXRSRqU67cZlCt7On3/TmRX8D/wBdRiUe+BTzagAAAAASUVORK5CYII=" rel="icon" type="image/x-icon"/>
     <link rel="preload" href="/fonts/open-sans-v40-latin-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="preload" href="/fonts/open-sans-v40-latin-700.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-    <link rel="preload" as="style" href="css/bootstrap-grid.min.css" onload="this.rel='stylesheet'">
     <link rel="stylesheet" href="css/style.css">
-    <noscript>
-        <link rel="stylesheet" href="css/bootstrap-grid.min.css">
-    </noscript>
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -43,22 +39,23 @@
         <h2>a privacy aware site blocker</h2>
         <ul>
             <li>
-                <a href="https://addons.mozilla.org/en-US/firefox/addon/lightweight-blocker/" target="_blank" onclick="setTimeout(function(){ window.location.href='index.html'; }, 50);">
+                <a href="https://addons.mozilla.org/en-US/firefox/addon/lightweight-blocker/" target="_blank" rel="noopener" onclick="setTimeout(function(){ window.location.href='index.html'; }, 50);">
                     Firefox
                 </a>
             </li>
             <li>
-                <a href="https://chromewebstore.google.com/detail/gppkhppnogcgodjackcgcfoepdngfcpm?utm_source=item-share-cb" target="_blank" onclick=" setTimeout(function(){ window.location.href='index.html'; }, 50);">
+                <a href="https://chromewebstore.google.com/detail/gppkhppnogcgodjackcgcfoepdngfcpm?utm_source=item-share-cb" target="_blank" rel="noopener" onclick=" setTimeout(function(){ window.location.href='index.html'; }, 50);">
                     Chrome
                 </a>
             </li>
             <li>
-                <a href="https://github.com/SiGe11/Lightweight-Blocker-Extension" target="_blank" onclick="setTimeout(function(){ window.location.href='index.html'; }, 50);">
+                <a href="https://github.com/SiGe11/Lightweight-Blocker-Extension" target="_blank" rel="noopener" onclick="setTimeout(function(){ window.location.href='index.html'; }, 50);">
                     Github
                 </a>
             </li>
         </ul>
     </div>
 </div>
+<script type="module" src="/crt/boot.js"></script>
 </body>
 </html>
