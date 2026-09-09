@@ -11,8 +11,8 @@
 import { wrap, clip, spaced, leader, width } from './text.js';
 import { readPage, prettyUrl } from './page.js';
 
-const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   Q exit   ESC escape';
-const HINT_NARROW = 'ARROWS  ENTER open  Q exit  ESC escape';
+const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   Q or :q exit   ESC escape';
+const HINT_NARROW = 'ARROWS  ENTER open  Q or :q exit  ESC escape';
 const LIST_MAX = 100;   // columns; beyond this the leaders just get silly
 
 /** The page's links, with a `..` entry first when this is not the site

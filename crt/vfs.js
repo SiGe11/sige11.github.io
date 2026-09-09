@@ -20,7 +20,6 @@ function launch(screen, url, line) {
    the page, so they never go stale. */
 const PROFILE = {
     name: 'Gergely Simon',
-    tagline: 'back-end developer · cybersecurity',
     bio: [
         'Back-end developer, cybersecurity enthusiast.'
     ],
@@ -32,7 +31,6 @@ function aboutFile(cols) {
     const lines = [];
 
     lines.push({ t: PROFILE.name.toUpperCase(), c: 'crt-bright' });
-    lines.push({ t: PROFILE.tagline, c: 'crt-dim' });
     lines.push('');
 
     for (const paragraph of PROFILE.bio) {
@@ -65,7 +63,7 @@ export function buildVfs(screen) {
             name: 'about.txt',
             kind: 'text',
             mode: '-rw-r--r--',
-            size: 1104,
+            size: 384,
             date: 'Feb  3 09:41',
             read: (cols) => aboutFile(cols),
         },
@@ -114,7 +112,7 @@ export function buildVfs(screen) {
             kind: 'text',
             hidden: true,
             mode: '-r--r--r--',
-            size: 96,
+            size: 48,
             date: 'Feb  3 09:41',
             read: () => flagFile(),
         },
