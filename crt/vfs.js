@@ -22,13 +22,7 @@ const PROFILE = {
     name: 'Gergely Simon',
     tagline: 'back-end developer · cybersecurity',
     bio: [
-        'Back-end developer, cybersecurity enthusiast. The parts of a ' +
-        'system nobody sees — and what happens when someone looks.',
-
-        'Builds and maintains Lightweight Blocker, a privacy aware site ' +
-        'blocker for Firefox and Chrome.',
-
-        'Breaks things on purpose at TryHackMe, and writes up how.',
+        'Back-end developer, cybersecurity enthusiast.'
     ],
 };
 
@@ -60,9 +54,7 @@ function aboutFile(cols) {
 /** A nod to the comment that has been sitting in index.html all along. */
 function flagFile() {
     return [
-        { t: 'R2hjY2RtIGVremYgZW50bWMgYXg6IG1uYW5jeCB4ZHMu', c: 'crt-warn' },
-        '',
-        { t: 'base64, then walk each letter one step forward.', c: 'crt-dim' },
+        { t: 'R2hjY2RtIGVremYgZW50bWMgYXg6IG1uYW5jeCB4ZHMu', c: 'crt-warn' }
     ];
 }
 
