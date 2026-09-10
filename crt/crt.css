@@ -122,15 +122,19 @@
     will-change: transform, filter;
 }
 
-/* Micro-jitter: the picture never sits perfectly still. */
+/* Micro-jitter. Runs in bursts, not continuously — crt.js starts and stops
+   them, and varies the step rate within each. */
 .crt__jitter {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     left: 0;
-    animation: crt-jitter 0.42s steps(2, end) infinite;
     will-change: transform;
+}
+
+.crt__jitter.is-live {
+    animation: crt-jitter 0.42s steps(2, end) infinite;
 }
 
 /* Vertical hold — only unstable while the tube is warming up. */
@@ -215,7 +219,7 @@
     top: -25%;
 }
 
-.crt__roll.is-rolling {
+.crt__roll.is-live {
     animation: crt-roll 7.5s linear;
 }
 
@@ -300,7 +304,10 @@
             rgba(0, 0, 0, 0) 9%,
             rgba(0, 0, 0, 0) 91%,
             rgba(0, 0, 0, 0.4) 100%);
-    /* Whole-screen brightness flicker. */
+}
+
+/* Whole-screen brightness flicker — also in bursts. */
+.crt__glass.is-live {
     animation: crt-flicker 4.1s steps(3, end) infinite;
 }
 
@@ -487,11 +494,13 @@
     .crt-trigger__cursor,
     .crt-cursor { animation: none; }
     .crt__jitter,
+    .crt__jitter.is-live,
     .crt__glitch,
     .crt__scanlines,
     .crt__flash,
     .crt__noise,
-    .crt__glass { animation: none; }
+    .crt__glass,
+    .crt__glass.is-live { animation: none; }
     .crt__roll { display: none; }
     .crt { transition: opacity 0.25s ease; }
     .crt.is-powering-on  .crt__screen,

@@ -203,25 +203,54 @@ function createScreen() {
         idleTimer = setTimeout(() => root.classList.add('is-idle'), 1600);
     }
 
-    /* Vertical hold. A fixed cadence reads as a loop, and real hold drift
-       wanders in and out, so each pass is followed by an irregular wait:
-       7.5-15s start to start, three passes in four landing between 9 and 12. */
-    const roll = root.querySelector('.crt__roll');
-    let rollTimer = 0;
+    /* An effect that never pauses reads as mechanical, however subtle it is.
+       These run in bursts of random length separated by random still spells,
+       so the tube is restless in fits rather than on a beat. All times in ms.
 
+       The animations themselves are untouched: only whether one is running
+       at all. pulse(selector, burst, rest) — [min, max] ranges, or a
+       function returning a duration. */
+    const pulses = [];
+    const between = (r) =>
+        typeof r === 'function' ? r() : r[0] + Math.random() * (r[1] - r[0]);
+
+    function pulse(selector, burst, rest) {
+        const el = root.querySelector(selector);
+        let timer = 0;
+
+        function run() {
+            el.classList.remove('is-live');
+            void el.offsetWidth;                 // reflow, or the restart is ignored
+            el.classList.add('is-live');
+            timer = setTimeout(() => {
+                el.classList.remove('is-live');
+                timer = setTimeout(run, between(rest));
+            }, between(burst));
+        }
+
+        pulses.push([run, () => {
+            clearTimeout(timer);
+            el.classList.remove('is-live');
+        }]);
+    }
+
+    /* Restless rather more often than not, with real pauses in between. */
+    pulse('.crt__jitter', [1600, 3600], [1100, 3200]);
+
+    /* Brightness wanders on a slower clock of its own. */
+    pulse('.crt__glass', [3200, 7000], [2000, 6000]);
+
+    /* Vertical hold: one 7.5s pass, then a wait. 7.5-15s start to start,
+       three passes in four landing between 9 and 12 — so the rest that
+       follows a pass is what is left of that after the 7.5s of travel. */
     function rollGap() {
         const r = Math.random();
-        if (r < 0.75) return 9000 + Math.random() * 3000;
+        if (r < 0.75) return 1500 + Math.random() * 3000;
         const tail = (r - 0.75) / 0.25 * 4500;   // the quarter outside, spread flat
-        return tail < 1500 ? 7500 + tail : 12000 + (tail - 1500);
+        return tail < 1500 ? tail : 4500 + (tail - 1500);
     }
 
-    function rollOnce() {
-        roll.classList.remove('is-rolling');
-        void roll.offsetWidth;                   // reflow, or the restart is ignored
-        roll.classList.add('is-rolling');
-        rollTimer = setTimeout(rollOnce, rollGap());
-    }
+    pulse('.crt__roll', [7500, 7500], rollGap);
 
     let resizeTimer = 0;
     let observer = null;
@@ -277,7 +306,8 @@ function createScreen() {
         root.addEventListener('wheel', onWheel, { passive: true });
         window.addEventListener('resize', onResize);
         onMouseMove();                       // start the idle countdown
-        if (!reducedMotion()) rollOnce();    // hidden entirely when motion is off
+        // Every one of these is stripped out when motion is off.
+        if (!reducedMotion()) for (const [start] of pulses) start();
 
         measure();
         watchSize();
@@ -291,7 +321,7 @@ function createScreen() {
         root.removeEventListener('wheel', onWheel);
         window.removeEventListener('resize', onResize);
         clearTimeout(idleTimer);
-        clearTimeout(rollTimer);
+        for (const [, stop] of pulses) stop();
         if (observer) { observer.disconnect(); observer = null; }
         clearTimeout(resizeTimer);
 
