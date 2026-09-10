@@ -203,6 +203,26 @@ function createScreen() {
         idleTimer = setTimeout(() => root.classList.add('is-idle'), 1600);
     }
 
+    /* Vertical hold. A fixed cadence reads as a loop, and real hold drift
+       wanders in and out, so each pass is followed by an irregular wait:
+       7.5-15s start to start, three passes in four landing between 9 and 12. */
+    const roll = root.querySelector('.crt__roll');
+    let rollTimer = 0;
+
+    function rollGap() {
+        const r = Math.random();
+        if (r < 0.75) return 9000 + Math.random() * 3000;
+        const tail = (r - 0.75) / 0.25 * 4500;   // the quarter outside, spread flat
+        return tail < 1500 ? 7500 + tail : 12000 + (tail - 1500);
+    }
+
+    function rollOnce() {
+        roll.classList.remove('is-rolling');
+        void roll.offsetWidth;                   // reflow, or the restart is ignored
+        roll.classList.add('is-rolling');
+        rollTimer = setTimeout(rollOnce, rollGap());
+    }
+
     let resizeTimer = 0;
     let observer = null;
 
@@ -257,6 +277,7 @@ function createScreen() {
         root.addEventListener('wheel', onWheel, { passive: true });
         window.addEventListener('resize', onResize);
         onMouseMove();                       // start the idle countdown
+        if (!reducedMotion()) rollOnce();    // hidden entirely when motion is off
 
         measure();
         watchSize();
@@ -270,6 +291,7 @@ function createScreen() {
         root.removeEventListener('wheel', onWheel);
         window.removeEventListener('resize', onResize);
         clearTimeout(idleTimer);
+        clearTimeout(rollTimer);
         if (observer) { observer.disconnect(); observer = null; }
         clearTimeout(resizeTimer);
 

@@ -198,7 +198,8 @@
     opacity: 0.75;
 }
 
-/* The bright band that rolls slowly down a tired tube. */
+/* The bright band that rolls down a tired tube. Parked off the top edge
+   until crt.js starts a pass; the gaps between passes are irregular. */
 .crt__roll {
     position: absolute;
     left: 0;
@@ -211,7 +212,11 @@
         rgba(120, 255, 160, 0.045) 45%,
         rgba(120, 255, 160, 0.075) 55%,
         rgba(120, 255, 160, 0) 100%);
-    animation: crt-roll 7.5s linear infinite;
+    top: -25%;
+}
+
+.crt__roll.is-rolling {
+    animation: crt-roll 7.5s linear;
 }
 
 /* The tube's edge: rounded glass, with the corners falling away. */
