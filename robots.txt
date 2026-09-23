@@ -1,3 +1,6 @@
 User-agent: *
-Disallow:
+# The repo is served as-is; its notes are not pages.
+Disallow: /CLAUDE.md
+Disallow: /README.md
+Disallow: /crt/README.md
 Sitemap: https://sige25.dev/sitemap.xml

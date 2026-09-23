@@ -100,7 +100,8 @@ export function createShell(screen, options = {}) {
         },
 
         dir: (args) => {
-            const entries = screen.vfs.list(args.join('').includes('a'));
+            // DOS spells "show hidden" /a; -a is accepted out of habit.
+            const entries = screen.vfs.list(args.some((a) => /^[/-]a/i.test(a)));
             print('');
             for (const e of entries) {
                 print([
@@ -143,7 +144,7 @@ export function createShell(screen, options = {}) {
     const HELP = [
         ['help', 'this list — also ? and man'],
         ['ls [-a] [-l]', 'list the files in this directory'],
-        ['dir', 'the same listing, DOS style'],
+        ['dir [/a]', 'the same listing, DOS style'],
         ['cat <file>', 'print a text file'],
         ['echo <file|text>', 'print a text file, or the text you typed'],
         ['./<file>', 'run an executable — also run, exec, sh'],
@@ -184,26 +185,49 @@ export function createShell(screen, options = {}) {
         screen.redraw();
     }
 
-    /** Tab completion over command names and file names. */
+    /** Tab completion over command names and file names. Like bash: a
+        unique match completes, several extend to what they share, and only
+        when nothing can be added are they listed. Dotfiles stay out of it
+        until the word itself starts with a dot. */
     function complete() {
         const parts = input.split(/\s+/);
         const word = parts[parts.length - 1] || '';
-        const prefix = word.replace(/^\.\//, '');
+        const bare = (name) => name.replace(/^\.\//, '');
+        const prefix = bare(word);
         const pool = parts.length > 1
-            ? screen.vfs.list(true).map((e) => e.name)
+            ? screen.vfs.list(prefix.startsWith('.')).map((e) => e.name)
             : Object.keys(COMMANDS).concat(screen.vfs.list().map((e) => './' + e.name));
 
-        const hits = pool.filter((c) => c.replace(/^\.\//, '').startsWith(prefix));
+        const hits = pool.filter((c) => bare(c).startsWith(prefix));
         if (!hits.length) return;
 
-        if (hits.length === 1) {
-            parts[parts.length - 1] = word.startsWith('./') ? './' + hits[0].replace(/^\.\//, '') : hits[0];
+        const names = hits.map(bare);
+        const shared = names.reduce((a, b) => {
+            let i = 0;
+            while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+            return a.slice(0, i);
+        });
+
+        if (hits.length === 1 || shared.length > prefix.length) {
+            const dotted = word.startsWith('./') || hits.every((h) => h.startsWith('./'));
+            parts[parts.length - 1] = (dotted ? './' : '') + shared;
             input = parts.join(' ');
             caret = input.length;
         } else {
             print([{ t: prompt, c: 'crt-dim' }, { t: input }]);
             print({ t: '  ' + hits.join('   '), c: 'crt-dim' });
         }
+        draw();
+    }
+
+    /** Pasted (or composed) text goes in at the caret. One line only:
+        a newline in the clipboard must not run anything. */
+    function paste(text) {
+        const line = String(text).split(/\r?\n/).find((l) => l.trim()) || '';
+        const clean = line.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 200);
+        if (!clean) return;
+        input = input.slice(0, caret) + clean + input.slice(caret);
+        caret += clean.length;
         draw();
     }
 
@@ -292,9 +316,11 @@ export function createShell(screen, options = {}) {
         name: 'shell',
         enter() {
             if (options.quiet !== true) banner();
+            screen.focusField();
         },
         draw,
         key,
+        paste,
         wheel(event) {
             scroll = Math.max(0, Math.min(output.length, scroll + (event.deltaY < 0 ? 3 : -3)));
             draw();

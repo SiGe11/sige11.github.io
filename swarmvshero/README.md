@@ -35,8 +35,8 @@ around it, which turns a packed swarm into something that survives a Shockwave.
 
 The slot-7 pick is about *reach*: the **Titan** walks in and holds the champion
 in place; the **Bombardier** lobs shells over terrain from 410 away and splashes
-on impact. It is the only thing in the roster that can clear a Summoner's wisps,
-and the only real answer to a champion that kites.
+on impact. One shell clears a pack of a Summoner's wisps, and it is the only
+real answer to a champion that kites.
 
 ## How it plays
 
@@ -45,11 +45,11 @@ which is exactly when you want it away from the fight. Draft swarm mutations
 between engagements. Trigger **Frenzy** for a burst of speed, damage and ability
 resistance when the window opens.
 
-**Corpses leave things behind.** About one death in twenty drops a pickup where
-the unit fell. Most are flasks — a loud, short boon for the champion — and the
-rarer spinning relics are permanent, capped at nine a run. The champion has to
-walk over one to take it, so a drop is a small piece of map you can play around:
-fight somewhere else, or take the trade. They fade after 13 seconds.
+**Corpses leave things behind.** About one death in seventeen drops a pickup
+where the unit fell. Most are spinning relics — permanent, capped at nine a run
+— and the rest are flasks, a loud, short boon for the champion. The champion has
+to walk over one to take it, so a drop is a small piece of map you can play
+around: fight somewhere else, or take the trade. They fade after 13 seconds.
 
 **Five champion archetypes**, rerolled every run, each demanding a different
 composition:
@@ -58,8 +58,8 @@ composition:
 - **Duelist** — fast blade, relentless attack speed
 - **Arcanist** — ranged bolts and wide, frequent abilities
 - **Huntress** — kites at range, punishing to chase
-- **Summoner** — calls wisps that fight beside it; they burn out on their own,
-  pay Aether when killed, and give no experience
+- **Summoner** — calls wisps that fight beside it; they come to your swarm, burn
+  out on their own, pay Aether when killed, and give no experience
 
 ## Controls
 
@@ -70,11 +70,26 @@ composition:
 | **1 – 7** | select a unit (also summons at the cursor); during a strain pick, 1 and 2 choose |
 | **Q** | clear the rally beacon |
 | **Space** | Frenzy |
+| **WASD** or **arrows** | look around; 3 seconds after you let go it returns to the champion and follows it again |
+| **Minimap** | click or drag to look there · right-click to set the rally beacon there |
+| **C** | recentre the camera on the champion now |
 | **Mouse wheel** | zoom |
 | **H** or **?** | field guide |
 | **Esc** | pause · **M** mute |
 
 Best played fullscreen — a wider view means you see the champion coming sooner.
+The run pauses itself if the window loses focus, and the mute switch and a
+small win record are remembered between visits. Screen shake and full-screen
+flashes follow the operating system's reduced-motion setting: shake goes, and
+flashes drop to a soft tint.
+
+Sound is panned to where things happen on screen, and fades for fights the
+camera is not on. A quiet ambient bed rises as the champion climbs its tiers,
+and a heartbeat counts down the Ascension.
+
+Every run has a seed, shown on the end screen. Opening the game as
+`?seed=1234` pins every run on that page to the same map and champion, so a run
+can be replayed or shared.
 
 ## Balance
 
@@ -121,7 +136,8 @@ python3 -c "import http.server as s; H=type('H',(s.SimpleHTTPRequestHandler,),{'
 | `src/hud.js` | All screen-space UI, plus the field guide text. |
 | `src/art.js` | Every procedural drawing routine. |
 | `src/world.js` | Arena generation, terrain, spatial queries. |
-| `src/fx.js` · `src/audio.js` · `src/math.js` | Particles, synthesised sound, helpers. |
+| `src/fx.js` · `src/audio.js` · `src/math.js` | Particles, synthesised sound, helpers — including the seeded RNG every gameplay roll goes through. |
+| `src/prefs.js` | The remembered mute switch and win record. Guarded, so blocked storage only forgets them. |
 | `dev/balance-harness.js` | Development tool. Never loaded by the game — paste it into the console. |
 | `dev/compat-check.html` | Development tool. Open it in a browser to verify that browser. |
 | `dev/browser-tests/` | Development tool. Playwright + safaridriver cross-browser suite. |
@@ -135,11 +151,19 @@ window.__suite(window.__DUMB, 80)                    // constant pressure
 window.__suite(window.__DUMB, 40, { cls: 'summoner' })  // one archetype
 window.__suite(window.__STAGE, 40)                   // stages near the fight
 window.__suite(window.__SMART, 40)                   // parks the army (bad play)
+window.__suite(window.__DUMB, 200, { seed: 1 })      // seeds 1..200, reproducible
+window.__play(window.__DUMB, { seed: 57 })           // replay one run exactly
 ```
 
 It reports a win rate, run lengths, per-archetype and per-strain results, and
 any invariant violations — NaN state, runaway multipliers, entities outside the
-world, caps exceeded.
+world, wells reordered, caps exceeded.
+
+With a seed, every roll — map, champion, combat and the bot's own choices — is
+fixed, so the same call on the same build returns the same result. To judge a
+change, run the same seeded batch before and after it: both builds face the
+same maps and champions, and `results` lists each run's seed so the runs that
+flipped can be replayed one by one.
 
 ### Browser check
 
@@ -158,15 +182,18 @@ engines. See its README. Last run:
 
 | Engine | Result |
 |---|---|
-| Chromium 153 | 9/9 checks, layout clean at 10 viewports |
-| Google Chrome 152 | 9/9 checks, layout clean at 10 viewports |
-| Firefox 155 | 9/9 checks, layout clean at 10 viewports |
-| WebKit 26.6 | 9/9 checks, layout clean at 10 viewports |
-| Safari 26.6.2 (real) | 8/8 checks, layout clean at 10 viewports |
+| Chromium 153 | 23/23 checks, layout clean at 10 viewports |
+| Google Chrome 154 | 23/23 checks, layout clean at 10 viewports |
+| Firefox 155 | 23/23 checks, layout clean at 10 viewports |
+| WebKit 26.6 | 23/23 checks, layout clean at 10 viewports |
+| Safari 26.6.2 (real) | 17/17 checks, layout clean at 10 viewports |
+
+Microsoft Edge runs as a fifth target whenever it is installed; it is Blink, so
+Chrome's result covers it otherwise.
 
 Rendering is pixel-identical between engines: against Chromium, Chrome differs
-by at most 11/255 on a channel, Firefox by 7, and WebKit by more than 24 at
-exactly one of 576 sample points — an antialiased prop edge.
+by at most 14/255 on a channel, Firefox by 7, and WebKit by more than 24 on
+0.3% of sampled channels — antialiased prop edges.
 
 ## Credits
 

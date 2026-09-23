@@ -6,9 +6,12 @@
 
 A vintage-terminal skin, and on desktop it is what the visitor gets: the page
 powers up as a green-phosphor CRT showing the same content as a TUI, with the
-same links. Esc / `exit` / `./legacy.sh` leaves it for the plain document
-underneath; leaving is **not** remembered, so the next load starts the tube
-again. The glyph bottom-left brings it back without a reload.
+same links. Esc / `exit` / `./legacy.sh` — or a click on `ESC escape` in the
+status line — leaves it for the plain document underneath. Leaving is
+**honoured for the rest of the tab**: links followed from the plain page land
+on plain pages, and Back does not bring the tube back either. The glyph
+bottom-left switches it on again (and links then stay in it); a reload or a
+new tab starts with the tube, as a first visit does.
 
 The site's only dependency on any of this is one line before `</body>`:
 
@@ -24,10 +27,17 @@ Remove that line and terminal mode is gone.
 touch), and a viewport >= 760 x 480. Otherwise nothing is injected and
 `crt.css` is never even requested — that is the whole mobile story.
 
-`mode.js` carries one thing: `sige.crt.seen` in `sessionStorage`, keeping the
-power-on crawl to once per tab so a link followed inside the terminal does not
-replay the boot. Access is wrapped — reading `sessionStorage` throws outright
-when site data is blocked.
+On an eligible machine it preloads every module side by side (`MODULES` in
+`boot.js` — a new module belongs on that list), and nothing opens until
+`crt.css` has loaded: the glyph is injected on its `load`, and if it fails
+there is no terminal mode at all rather than an unstyled one.
+
+`mode.js` carries two flags in `sessionStorage`. `sige.crt.left` is set by
+every way out (`close()` in `crt.js`) and cleared by `open()`; `boot.js`
+skips the auto-start while it is set, unless the navigation is a reload.
+`sige.crt.seen` keeps the power-on crawl to once per tab, so a link followed
+inside the terminal does not replay the boot. Access is wrapped — reading
+`sessionStorage` throws outright when site data is blocked.
 
 ## Keys
 
@@ -38,12 +48,16 @@ when site data is blocked.
 | Enter, or a click | open the link |
 | `1`-`9` | jump to that entry |
 | `q` | to the console (`:q` also works) |
-| Esc | leave terminal mode |
+| Esc, or a click on `ESC escape` | leave terminal mode — also mid-crawl |
 
 **Console** — `help` lists the lot: `ls`, `dir`, `cat <file>`,
 `echo <file\|text>`, `./<file>`, `date`, `uname`, `clear`, `exit`. Tab
-completes, up walks the history, Ctrl+L clears, Ctrl+C abandons the line —
-unless text is selected, when the browser gets the key and copies.
+completes as bash does (unique match, then the shared prefix, then a listing;
+dotfiles only once the word starts with `.`), up walks the history, Ctrl+L
+clears, Ctrl+C abandons the line — unless text is selected, when the browser
+gets the key and copies. Cmd/Ctrl+V pastes the clipboard's first non-empty
+line. AltGr and Option characters (`~ | \ @ { }` on most non-US layouts),
+dead keys and IME input all type as text.
 
 Files in `~`: `about.txt`, `site.sh` (draw the site again), `legacy.sh` (back
 to the normal site), `swarm.exe`, `writeup.sh`.
@@ -52,8 +66,8 @@ to the normal site), `swarm.exe`, `writeup.sh`.
 
 | File | |
 |------|--|
-| `boot.js` | eligibility, the trigger glyph, lazy-loads the rest |
-| `mode.js` | has the tube warmed up in this tab |
+| `boot.js` | eligibility, module preloads, the trigger glyph, lazy-loads the rest |
+| `mode.js` | did the visitor leave it; has the tube warmed up — per tab |
 | `crt.js` | overlay, character grid, key routing, power on/off |
 | `pageview.js` | the site as a TUI, and the `:` command line |
 | `shell.js` | the console — commands live in `COMMANDS` |
@@ -63,7 +77,9 @@ to the normal site), `swarm.exe`, `writeup.sh`.
 | `crt.css` | phosphor, scanlines, jitter, flutter, power on/off |
 
 Edit points: `PROFILE` in `vfs.js` is what `about.txt` says (the links under
-it are read from the page and never go stale); one more entry in `entries`
+it are the `sameAs` list in the page's JSON-LD — the Person on `index.html`,
+its `author` on `lightweight-blocker.html` — so every page lists the same
+profiles); one more entry in `entries`
 adds a file, which the shell then lists, cats and completes on its own; one
 more entry in `COMMANDS` adds a command; `CURVE` in `crt.js` is the tube's
 bulge, 0 to flatten it.
@@ -94,7 +110,34 @@ Latin; everything it renders stays in English.
   `:focus` alone it shrinks back to a pixel between press and release and
   swallows its own click.
 * The buffer is deliberately **not** `aria-live`: a screen redrawn on every
-  keystroke would be read out on every keystroke.
+  keystroke would be read out on every keystroke. Instead **focus follows the
+  selection**: the selected link gets real focus, with its name as
+  `aria-label` so the dotted leader is not read out. A redraw never takes
+  focus off the exit button.
+* **The console's focus lives in a hidden `<textarea>`** (`.crt__input`).
+  Keystrokes are handled on `keydown` and never reach it, but two things only
+  an editable element gets do: paste (**Safari will not paste into anything
+  that is not editable**, so Cmd+V first moves focus there) and composition
+  (dead keys, IME), which is handed to the shell on `compositionend`.
+* **AltGr arrives as Ctrl+Alt on Windows.** `typedWithModifier()` in `crt.js`
+  treats AltGr — and Option on a Mac — plus a printable key as text, and
+  hands the views an event with the phantom Ctrl removed. Plain Alt+letter on
+  Windows and Linux stays a browser shortcut (Alt+D, Alt+F).
+* **The back/forward cache restores a page as it was left**, tube and all,
+  without running `init()` again. A `pageshow` handler in `boot.js` brings a
+  restored page in line with `sige.crt.left`: it closes the tube instantly
+  (`close({ instant: true })`) or opens it. Playwright disables that cache
+  by default, so a test of this needs Chrome with
+  `ignoreDefaultArgs: ['--disable-back-forward-cache']`, or real Safari.
+* **No stylesheet, no screen.** An unstyled screen still makes every sibling
+  `inert` and locks scrolling, so `boot.js` rejects on a `crt.css` error
+  instead of opening anyway.
+* **`is-powering-on` is removed on the `crt-hold` `animationend`**, the last
+  power-on animation to finish; otherwise its fill keeps a filter on the whole
+  screen. Retiming the power-on means checking which animation ends last.
+* **The host pages carry a Content-Security-Policy `<meta>`**: no `style=`
+  attributes in markup strings and no inline handlers. Setting `element.style`
+  from JS is fine — the CSP does not cover the CSSOM.
 
 ## Verified
 
@@ -105,6 +148,13 @@ at 800x520, 1024x768, 1280x720, 1366x768, 1440x900, 1536x864, 1600x900,
 axe-core: no violations in either view on any engine. `prefers-reduced-motion`
 drops jitter, flutter, roll and the power-on, and opens without the crawl.
 Dim green is 4.8:1 on the tube, everything else well above.
+
+Re-checked after the September 2026 audit fixes, at 1280x800 on Chromium 153,
+Chrome 154, Firefox 155 and WebKit 26.6 (Playwright), and in real Safari 26.6.2
+through `safaridriver`: Esc mid-crawl, the clickable ESC hint, focus following
+the selection, the shell (completion, paste, AltGr, composition), `about.txt`,
+a failed `crt.css`, and no CSP violations. Real Cmd+V paste works in all five.
+axe-core still finds no violations in either view on Chromium, Firefox or WebKit.
 
 Floor is roughly Chrome/Edge 86, Firefox 78, Safari 14 — ES modules,
 `replaceChildren` (which has a fallback) and custom properties. Older

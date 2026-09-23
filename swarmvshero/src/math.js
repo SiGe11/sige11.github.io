@@ -1,11 +1,30 @@
 // Small vector / scalar helpers shared across the game.
 
+/** A fresh seed. Drawn from Math.random, so a test that stubs it stays deterministic. */
+export const randomSeed = () => Math.floor(Math.random() * 4294967296);
+
+/**
+ * Every gameplay roll goes through one seedable generator (mulberry32), so a
+ * run can be replayed from its seed — `?seed=` in the URL, and paired batches
+ * in the balance harness. Purely cosmetic randomness (screen shake, audio
+ * noise) stays on Math.random and never advances this stream.
+ */
+let rngState = randomSeed();
+export const seedRandom = (seed) => { rngState = seed >>> 0; };
+export const random = () => {
+  rngState = (rngState + 0x6d2b79f5) >>> 0;
+  let t = rngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const lerp = (a, b, t) => a + (b - a) * t;
-export const rand = (min, max) => min + Math.random() * (max - min);
+export const rand = (min, max) => min + random() * (max - min);
 export const randInt = (min, max) => Math.floor(rand(min, max + 1));
-export const pick = (list) => list[Math.floor(Math.random() * list.length)];
-export const chance = (p) => Math.random() < p;
+export const pick = (list) => list[Math.floor(random() * list.length)];
+export const chance = (p) => random() < p;
 
 export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export const dist2 = (a, b) => {

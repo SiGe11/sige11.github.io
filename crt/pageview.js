@@ -11,8 +11,10 @@
 import { wrap, clip, spaced, leader, width } from './text.js';
 import { readPage, prettyUrl } from './page.js';
 
-const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   Q or :q exit   ESC escape';
-const HINT_NARROW = 'ARROWS  ENTER open  Q or :q exit  ESC escape';
+const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   Q or :q exit';
+const HINT_NARROW = 'ARROWS  ENTER open  Q or :q exit';
+/* Its own segment, never clipped away: it is also the mouse's way out. */
+const HINT_ESC = 'ESC escape';
 const LIST_MAX = 100;   // columns; beyond this the leaders just get silly
 
 /** The page's links, with a `..` entry first when this is not the site
@@ -22,9 +24,10 @@ function buildItems(page) {
     // Paths only: a query string or #fragment must not make the home page
     // look like a sub-page and add a `..` back to itself.
     const here = new URL(location.pathname.replace(/index\.html?$/, ''), location.href).href;
+    const onRoot = here === root;
     const items = [];
 
-    if (here !== root) {
+    if (!onRoot) {
         items.push({
             label: 'Back to ' + prettyUrl(root),
             href: root,
@@ -32,7 +35,10 @@ function buildItems(page) {
             marker: '..',
         });
     }
-    page.links.forEach((link, i) => items.push({ ...link, marker: String(i + 1) }));
+    page.links
+        // The page's own link home is what `..` already is.
+        .filter((link) => onRoot || link.href !== root)
+        .forEach((link, i) => items.push({ ...link, marker: String(i + 1) }));
     return items;
 }
 
@@ -90,6 +96,8 @@ export function createPageView(screen) {
                 c: index === selected ? 'crt-sel' : '',
                 href: item.href,
                 external: item.external,
+                label: item.label,
+                focus: index === selected,
                 index,
             },
         ]);
@@ -120,8 +128,11 @@ export function createPageView(screen) {
             rank: 4,
             lines: [[{ t: indent }, { t: glyph().h.repeat(Math.min(inner() - 6, 34)), c: 'crt-dim' }]],
         });
-        if (page.description) {
-            const body = wrap(page.description, Math.max(24, Math.min(inner() - 8, 66)))
+        // A person's page says what they do; the meta description is
+        // written for search results and reads like it on screen.
+        const blurb = page.role || page.description;
+        if (blurb) {
+            const body = wrap(blurb, Math.max(24, Math.min(inner() - 8, 66)))
                 .map((row) => [{ t: indent }, { t: row, c: 'crt-dim' }]);
             blocks.push({ rank: 5, lines: [[], ...body] });
         }
@@ -169,9 +180,15 @@ export function createPageView(screen) {
             return [{ t: ' ' + clip(message, screen.cols - 2), c: 'crt-warn' }];
         }
 
-        const base = screen.cols >= 72 ? HINT_WIDE : HINT_NARROW;
+        const wide = screen.cols >= 72;
+        const base = wide ? HINT_WIDE : HINT_NARROW;
         const hint = canGoBack ? base.replace('ENTER open', 'ENTER open   BKSP back') : base;
-        const line = [{ t: ' ' + clip(hint, screen.cols - 2), c: 'crt-dim' }];
+        const gap = wide ? '   ' : '  ';
+        const line = [
+            { t: ' ' + clip(hint, screen.cols - 2 - gap.length - HINT_ESC.length), c: 'crt-dim' },
+            { t: gap },
+            { t: HINT_ESC, c: 'crt-dim', action: 'close' },
+        ];
         // Say where we are only when the list does not all fit on screen.
         if (view && view.list.length < items.length) {
             const count = ` ${selected + 1}/${items.length} `;

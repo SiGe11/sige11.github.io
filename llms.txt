@@ -4,10 +4,10 @@
 
 ## Main
 
-- [Simon Gergely | dev](https://sige25.dev/): Simon Gergely
+- [Simon Gergely | dev](https://sige25.dev/): Simon Gergely's business card: back-end developer, cybersecurity enthusiast. Links to LinkedIn, GitHub, TryHackMe and Lightweight Blocker
 
 ## More
 
-- [Lightweight Blocker](https://sige25.dev/lightweight-blocker.html): Lightweight Blocker — A privacy aware site blocker. Links to browser extension pages for Firefox and Chrome
-- [Swarm vs Hero](https://sige25.dev/swarmvshero): Swarm vs Hero — command an evolving swarm against a lone champion that grows stronger with every unit it kills
-- [Funpage Write-Up](https://sige25.dev/content/writeups/funpage): Funpage, TryHackMe room write-up by Simon Gergely
+- [Lightweight Blocker](https://sige25.dev/lightweight-blocker.html): Lightweight Blocker — A privacy aware site blocker. Links to browser extension pages for Firefox and Chrome, and the source on GitHub
+- [Swarm vs Hero](https://sige25.dev/swarmvshero/): Swarm vs Hero — command an evolving swarm against a lone champion that grows stronger with every unit it kills
+- [Funpage Write-Up](https://sige25.dev/content/writeups/funpage/): Funpage, TryHackMe room write-up by Simon Gergely

@@ -425,7 +425,20 @@ function drawCrystal(ctx, t, time) {
  * silhouette and a gait tied to how far it has actually walked, so the swarm
  * reads as a crowd of animals rather than a cloud of circles.
  */
-export function drawUnit(ctx, u, def, time, lod) {
+const NO_LOOK = { frenzy: 0, calm: false };
+
+/** Overshooting ease for the spawn pop: 0 -> a little past 1 -> 1. */
+const popIn = (t) => {
+  const c = 1.70158;
+  const x = t - 1;
+  return 1 + (c + 1) * x * x * x + c * x * x;
+};
+
+/**
+ * `look.frenzy` (0..1) is how strongly the swarm is frenzied this frame and
+ * `look.calm` is the reduced-motion preference. HUD portraits pass neither.
+ */
+export function drawUnit(ctx, u, def, time, lod, look = NO_LOOK) {
   const r = def.radius;
   const hover = def.hover ? Math.sin(time * 5 + u.seed) * 3 - 6 : 0;
 
@@ -434,11 +447,37 @@ export function drawUnit(ctx, u, def, time, lod) {
     return;
   }
 
-  contactShadow(ctx, u.x + 3, u.y + r * 0.55, r * 0.95, r * 0.42, def.hover ? 0.2 : 0.32);
-  drawGlow(ctx, u.x, u.y + hover, r * 2.6, def.color, 0.16);
+  // Climbing out of the rift: grow in with a small overshoot rather than
+  // popping in at full size. Reduced motion skips the overshoot.
+  const spawn = u.spawnScale ?? 1;
+  const pop = spawn >= 1 ? 1 : Math.max(0.05, look.calm ? spawn : popIn(spawn));
+  const frenzy = look.frenzy;
+
+  contactShadow(ctx, u.x + 3, u.y + r * 0.55, r * 0.95 * pop, r * 0.42 * pop, def.hover ? 0.2 : 0.32);
+  // Frenzy brightens the aura only a little: glows are additive, and twenty
+  // overlapping in a blob burned the fight out to white and hid the
+  // champion. The streaks and the violet screen edge carry the rest.
+  if (frenzy > 0) drawFrenzyStreaks(ctx, u, r, hover, frenzy);
+  const beat = frenzy > 0 && !look.calm ? 0.85 + Math.sin(time * 10 + u.seed) * 0.15 : 1;
+  drawGlow(ctx, u.x, u.y + hover, r * (2.6 + frenzy * 0.5) * pop, def.color, (0.16 + frenzy * 0.1) * beat);
+
+  // Spawn protection: a thin pale shell while the unit cannot be hurt, so
+  // the rule is visible rather than guessed.
+  if (u.invuln > 0 && spawn >= 1) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = clamp(u.invuln / 0.25, 0, 1) * 0.5;
+    ctx.strokeStyle = '#f2dcff';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(u.x, u.y + hover, r * 1.3, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.save();
   ctx.translate(u.x, u.y + hover);
+  if (pop !== 1) ctx.scale(pop, pop);
   ctx.rotate(u.facing);
 
   const flash = u.hitFlash > 0 ? clamp(u.hitFlash / 0.14, 0, 1) : 0;
@@ -473,6 +512,36 @@ export function drawUnit(ctx, u, def, time, lod) {
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  ctx.restore();
+}
+
+/**
+ * Frenzy speed lines: three strokes streaming off the back of a running
+ * unit, longer the faster it goes. Standing units draw none.
+ */
+function drawFrenzyStreaks(ctx, u, r, hover, frenzy) {
+  const speed = Math.hypot(u.vx ?? 0, u.vy ?? 0);
+  if (speed < 30) return;
+  const bx = -u.vx / speed;
+  const by = -u.vy / speed;
+  const len = Math.min(r * 3.4, speed * 0.17) * frenzy;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = PALETTE.swarmGlow;
+  for (let side = -1; side <= 1; side += 1) {
+    const ox = -by * side * r * 0.45;
+    const oy = bx * side * r * 0.45;
+    const reach = side === 0 ? len : len * 0.65;
+    const sx = u.x + ox + bx * r * 0.7;
+    const sy = u.y + hover + oy + by * r * 0.7;
+    ctx.globalAlpha = (side === 0 ? 0.55 : 0.32) * frenzy;
+    ctx.lineWidth = side === 0 ? 2.4 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + bx * reach, sy + by * reach);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -1293,6 +1362,122 @@ function drawWeapon(ctx, weapon, r, stage, time) {
   ctx.fillRect(r * 0.1, -r * 0.3, r * 0.12, r * 0.6);
   ctx.fillStyle = '#5c4a2c';
   ctx.fillRect(-r * 0.25, -r * 0.08, r * 0.36, r * 0.16);
+}
+
+/**
+ * The Shriekers' work, drawn on the champion itself: a frost ring at its feet
+ * while slowed, target brackets while marked. Both scale with the debuff
+ * against its cap, and they sit above the crowd, so they also help find the
+ * champion under a pile of bodies.
+ */
+export function drawChampionMarks(ctx, hero, stats, debuffs, caps, time, calm) {
+  const slow = clamp(debuffs.slow / caps.slow, 0, 1);
+  const mark = clamp(debuffs.mark / caps.mark, 0, 1);
+  if (slow <= 0 && mark <= 0) return;
+  const r = stats.radius;
+  ctx.save();
+
+  if (slow > 0) {
+    const cy = hero.y + r * 0.45;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(140,225,255,${0.25 + slow * 0.45})`;
+    ctx.lineWidth = 2 + slow * 2;
+    ctx.beginPath();
+    ctx.ellipse(hero.x, cy, r * 1.35, r * 0.5, 0, 0, TAU);
+    ctx.stroke();
+    // Ice shards riding the ring; more of them the harder it is slowed.
+    const shards = 3 + Math.round(slow * 5);
+    const spin = calm ? 0 : time * 0.5;
+    const size = 4 + slow * 5;
+    ctx.fillStyle = `rgba(210,244,255,${0.35 + slow * 0.4})`;
+    for (let i = 0; i < shards; i += 1) {
+      const a = spin + (i / shards) * TAU;
+      const x = hero.x + Math.cos(a) * r * 1.35;
+      const y = cy + Math.sin(a) * r * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, y - size);
+      ctx.lineTo(x + size * 0.35, y);
+      ctx.lineTo(x, y + size * 0.4);
+      ctx.lineTo(x - size * 0.35, y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  if (mark > 0) {
+    ctx.globalCompositeOperation = 'source-over';
+    const pulse = calm ? 0.5 : 0.5 + Math.sin(time * 6) * 0.5;
+    const d = r * (1.5 + pulse * 0.12);
+    const arm = r * 0.5;
+    const cy = hero.y - r * 0.1;
+    // Dark under-stroke first, so the brackets read on bright ground too.
+    for (const [color, width] of [['rgba(6,10,18,0.6)', 5 + mark * 1.5], [`rgba(127,220,255,${0.5 + mark * 0.45})`, 2 + mark * 1.5]]) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const x = hero.x + sx * d;
+        const y = cy + sy * d;
+        ctx.beginPath();
+        ctx.moveTo(x, y - sy * arm);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x - sx * arm, y);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+/**
+ * The final tier's countdown, made visible on the champion: a turning sigil
+ * on the ground and a column of light, both growing as Ascension nears.
+ * `level` is 0 (not ascending) to 1 (about to); `layer` is 'ground' (under
+ * the actors) or 'sky' (over them).
+ */
+export function drawAscension(ctx, hero, stats, level, time, calm, layer) {
+  if (level <= 0) return;
+  const r = stats.radius;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  if (layer === 'ground') {
+    const cy = hero.y + r * 0.4;
+    const R = r * (2 + level * 1.4);
+    const spin = calm ? 0 : time * 0.6;
+    ctx.strokeStyle = `rgba(255,214,140,${0.14 + level * 0.46})`;
+    ctx.lineWidth = 1.5 + level * 1.5;
+    for (const k of [1, 0.72]) {
+      ctx.beginPath();
+      ctx.ellipse(hero.x, cy, R * k, R * k * 0.45, 0, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i += 1) {
+      const a = spin + (i / 12) * TAU;
+      ctx.beginPath();
+      ctx.moveTo(hero.x + Math.cos(a) * R * 0.76, cy + Math.sin(a) * R * 0.76 * 0.45);
+      ctx.lineTo(hero.x + Math.cos(a) * R * 0.96, cy + Math.sin(a) * R * 0.96 * 0.45);
+      ctx.stroke();
+    }
+  } else {
+    const flicker = calm ? 1 : 0.86 + Math.sin(time * 9) * 0.08 + Math.sin(time * 23) * 0.06;
+    const w = r * (0.45 + level * 0.9);
+    const h = 560;
+    const g = ctx.createLinearGradient(hero.x, hero.y, hero.x, hero.y - h);
+    g.addColorStop(0, `rgba(255,228,170,${(0.1 + level * 0.32) * flicker})`);
+    g.addColorStop(0.35, `rgba(255,214,150,${(0.05 + level * 0.16) * flicker})`);
+    g.addColorStop(1, 'rgba(255,214,150,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(hero.x - w, hero.y);
+    ctx.lineTo(hero.x - w * 0.55, hero.y - h);
+    ctx.lineTo(hero.x + w * 0.55, hero.y - h);
+    ctx.lineTo(hero.x + w, hero.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // ----------------------------------------------------------------------- misc

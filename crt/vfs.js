@@ -1,8 +1,8 @@
 /* The virtual file system. Add a file by pushing one more object into
    `entries` below; the shell picks it up for ls / cat / echo / completion. */
 
-import { wrap, leader, clip } from './text.js';
-import { readPage, prettyUrl } from './page.js';
+import { wrap, leader } from './text.js';
+import { readPage, prettyUrl, siteName } from './page.js';
 
 const SWARM_URL = '/swarmvshero/';
 const WRITEUP_URL = '/content/writeups/funpage/';
@@ -16,10 +16,10 @@ function launch(screen, url, line) {
     return [line];
 }
 
-/* about.txt — the one place to edit it. The links under it are read from
-   the page, so they never go stale. */
+/* about.txt — the one place to edit it. The links under it are the
+   page's JSON-LD `sameAs`, so they never go stale. */
 const PROFILE = {
-    name: 'Gergely Simon',
+    name: 'Simon Gergely',
     bio: [
         'Back-end developer, cybersecurity enthusiast.'
     ],
@@ -38,10 +38,10 @@ function aboutFile(cols) {
         lines.push('');
     }
 
-    if (page.links.length) {
+    if (page.profiles.length) {
         lines.push({ t: 'ELSEWHERE', c: 'crt-dim' });
-        for (const link of page.links) {
-            lines.push(['  ', ...leader(clip(link.label, 20), prettyUrl(link.href), inner - 2)]);
+        for (const href of page.profiles) {
+            lines.push(['  ', ...leader(siteName(href), prettyUrl(href), inner - 2)]);
         }
         lines.push('');
     }
@@ -49,7 +49,7 @@ function aboutFile(cols) {
     return lines;
 }
 
-/** A nod to the comment that has been sitting in index.html all along. */
+/** A small cipher puzzle. It used to sit in a comment in index.html. */
 function flagFile() {
     return [
         { t: 'R2hjY2RtIGVremYgZW50bWMgYXg6IG1uYW5jeCB4ZHMu', c: 'crt-warn' }
@@ -58,12 +58,12 @@ function flagFile() {
 
 export function buildVfs(screen) {
     const entries = [
-        // Who Gergely Simon is.
+        // Who Simon Gergely is.
         {
             name: 'about.txt',
             kind: 'text',
             mode: '-rw-r--r--',
-            size: 384,
+            size: 294,
             date: 'Feb  3 09:41',
             read: (cols) => aboutFile(cols),
         },
@@ -112,7 +112,7 @@ export function buildVfs(screen) {
             kind: 'text',
             hidden: true,
             mode: '-r--r--r--',
-            size: 48,
+            size: 45,
             date: 'Feb  3 09:41',
             read: () => flagFile(),
         },

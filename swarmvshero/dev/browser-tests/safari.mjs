@@ -59,6 +59,122 @@ try {
   out.checks.freshKeyPicksAfterDelay = await js(
     'const g=window.__swarm; return g.roster[5]==="mender" && g.phase==="playing";');
 
+  // 4b-4i. regression checks, driven through the game's real DOM handlers.
+  // WebDriver has no Playwright-style input, so these dispatch the events the
+  // browser would, and step frames with update() rather than waiting on rAF.
+  const DOWN = `const down=(x,y,button)=>{const r=g.canvas.getBoundingClientRect();
+    g.canvas.dispatchEvent(new MouseEvent('mousedown',{clientX:r.left+x,clientY:r.top+y,button,bubbles:true}));
+    window.dispatchEvent(new MouseEvent('mouseup',{clientX:r.left+x,clientY:r.top+y,button,bubbles:true}));};`;
+
+  out.checks.heldDigitSummonsOnce = await js(`
+    const g=window.__swarm; g.newRun(); g.phase='playing'; g.aether=999;
+    let n=0; const orig=g.trySummon.bind(g);
+    g.trySummon=(...a)=>{const ok=orig(...a); if(ok) n+=1; return ok;};
+    for (let i=0;i<400;i++){
+      const s={x:300+Math.random()*(g.width-600), y:200+Math.random()*(g.height-400)};
+      if(!g.hud.pointerOverUi(s)&&!g.summonBlocker('mite',g.screenToWorld(s.x,s.y))){
+        g.mouse.x=s.x; g.mouse.y=s.y; g.mouse.world=g.screenToWorld(s.x,s.y); break; }
+    }
+    for (let i=0;i<4;i++) window.dispatchEvent(new KeyboardEvent('keydown',{key:'1',code:'Digit1',repeat:i>0}));
+    delete g.trySummon; return n===1;`);
+
+  out.checks.panelClickDoesNotSummon = await js(`
+    const g=window.__swarm; g.newRun(); g.phase='playing'; g.aether=999; ${DOWN}
+    let n=0; const orig=g.trySummon.bind(g); g.trySummon=(...a)=>{n+=1; return orig(...a);};
+    g.update(1/60);   // the intro line is in the feed, so it has a rect too
+    for (const r of [g.hud.resourcePanelRect(), g.hud.heroPanelLayout().rect, ...g.hud.feedLineRects()]) {
+      down(r.x+r.w/2, r.y+r.h/2, 0); g.update(1/60);
+    }
+    delete g.trySummon; return n===0;`);
+
+  out.checks.frenzyNotWhilePaused = await js(`
+    const g=window.__swarm; g.newRun(); g.phase='paused'; g.rally={x:500,y:500}; ${DOWN}
+    const f=g.hud.frenzyRect(); down(f.x+f.w/2, f.y+f.h/2, 0); g.update(1/60);
+    const paused = g.frenzyTimer===0 && g.rally!==null;
+    g.phase='playing'; down(f.x+f.w/2, f.y+f.h/2, 0); g.update(1/60);
+    return paused && g.frenzyTimer>0;`);
+
+  out.checks.wellsKeepOrder = await js(`
+    const g=window.__swarm; g.newRun(); g.phase='playing';
+    for (const w of g.world.wells){ w.owner='swarm'; w.progress=1; g.spawnUnit('mite',w.x,w.y); g.spawnUnit('mite',w.x+10,w.y); }
+    g.hero.hp=g.heroStats().maxHp*0.3; g.hero.x=g.world.wells[3].x+200; g.hero.y=g.world.wells[3].y;
+    for (let i=0;i<30;i++) g.update(1/60);
+    return g.world.wells.every((w,i)=>w.id===i) && g.units.every(u=>u.job===null||g.world.wells[u.job].id===u.job);`);
+
+  out.checks.seedReplaysRun = await js(`
+    const g=window.__swarm;
+    const play=(seed)=>{
+      g.newRun(seed); g.phase='playing'; g.keepRecords=false;
+      for (let i=0;i<60*90;i++){
+        if(g.phase==='upgrade') g.chooseUpgrade(g.upgradeChoices[0]);
+        if(g.phase==='choose') g.chooseUnit(g.unitChoice.options[0]);
+        if(g.phase!=='playing') break;
+        if(i%20===0){ const a=i*0.7, r=g.minSpawnRange()+40; g.trySummon(g.selected,{x:g.hero.x+Math.cos(a)*r,y:g.hero.y+Math.sin(a)*r}); }
+        g.update(1/60); g.clicks.length=0;
+      }
+      return JSON.stringify([g.heroClass.id,g.hero.x,g.hero.y,g.hero.hp,g.aether,g.units.length,g.stats.lost]);
+    };
+    const a=play(777); return a===play(777) && a!==play(778);`);
+
+  // Pan, let go, and it must be home within the 3 s delay plus the glide —
+  // paused as well as mid-fight.
+  out.checks.cameraPansAndRecenters = await js(`
+    const g=window.__swarm; let ok=true;
+    for (const ph of ['playing','paused']) {
+      g.newRun(); g.phase=ph; const x0=g.camera.x;
+      window.dispatchEvent(new KeyboardEvent('keydown',{key:'d',code:'KeyD'}));
+      for (let i=0;i<24;i++) g.update(1/60);
+      window.dispatchEvent(new KeyboardEvent('keyup',{key:'d',code:'KeyD'}));
+      const panned = g.camera.free!==null && g.camera.x>x0+40;
+      for (let i=0;i<60*2;i++) g.update(1/60);
+      const stillFree = g.camera.free!==null;               // not before the delay
+      for (let i=0;i<60*3;i++) g.update(1/60);
+      const t=g.clampCameraTarget(g.followTarget());
+      ok = ok && panned && stillFree && g.camera.free===null && Math.hypot(g.camera.x-t.x,g.camera.y-t.y)<60;
+    }
+    return ok;`);
+
+  // Every sound and the ambient bed render real audio in Safari's own engine,
+  // offline, so no autoplay gate or speakers are involved.
+  const jsAsync = (script) => api('POST', `/session/${sid}/execute/async`, { script, args: [] });
+  const silent = await jsAsync(`
+    const done = arguments[arguments.length - 1];
+    import('/src/audio.js').then(async ({ Sfx }) => {
+      const names = ['spawn','hit','heroHit','death','spit','telegraph','boom','summonTitan','surface','rally',
+        'upgrade','heroEmpower','heroEvolve','heartbeat','frenzy','evolve','capture','lose_well','victory','defeat','ambience'];
+      const quiet = [];
+      for (const name of names) {
+        const off = new OfflineAudioContext(2, 44100 * (name === 'ambience' ? 4 : 1), 44100);
+        Object.defineProperty(off, 'state', { get: () => 'running' });
+        const s = new Sfx(); s.attach(off); s.unlocked = true;
+        if (name === 'ambience') s.ambience(0.5, false); else s.play(name, { pan: 0.4 });
+        const data = (await off.startRendering()).getChannelData(0);
+        let peak = 0; for (const v of data) peak = Math.max(peak, Math.abs(v));
+        if (!(peak > 1e-4)) quiet.push(name);
+      }
+      done(quiet);
+    }, (e) => done(['import failed: ' + e.message]));`);
+  out.checks.everySoundRenders = Array.isArray(silent) && silent.length === 0;
+  if (silent.length) out.errors.push(`silent sounds: ${silent.join(', ')}`);
+
+  out.checks.minimapLooksAndRallies = await js(`
+    const g=window.__swarm; g.newRun(); g.phase='playing'; ${DOWN}
+    const m=g.hud.minimapRect(); const x=m.x+m.w*0.25, y=m.y+m.h*0.75;
+    down(x,y,0); down(x,y,2); g.update(1/60);
+    const want={x:g.world.width*0.25, y:g.world.height*0.75};
+    return g.camera.free!==null && !!g.rally && Math.hypot(g.rally.x-want.x,g.rally.y-want.y)<40
+      && g.hud.minimapDrag===false;`);
+
+  out.checks.keyboardEdgeCases = await js(`
+    const g=window.__swarm; g.newRun(); g.phase='intro'; g.unlocked.add('flinger');
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'\\u00e9',code:'Digit2'}));   // AZERTY "2"
+    const azerty = g.selected==='flinger';
+    const muted=g.sfx.muted;
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'m',code:'KeyM',metaKey:true})); // Cmd+M
+    const shortcut = g.sfx.muted===muted;
+    g.phase='playing'; window.dispatchEvent(new Event('blur'));
+    return azerty && shortcut && g.phase==='paused';`);
+
   // 5. a full simulated run
   const sim = await js(`
     const g = window.__swarm;

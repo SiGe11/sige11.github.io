@@ -3,6 +3,8 @@
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Funpage Write-Up</title>
     <link rel="canonical" href="https://sige25.dev/content/writeups/funpage/"/>
     <meta name="description" content="Funpage, TryHackMe room write-up by Simon Gergely."/>
@@ -13,9 +15,12 @@
     <meta property="og:title" content="Funpage Write-Up">
     <meta property="og:description" content="Funpage, TryHackMe room write-up by Simon Gergely.">
     <meta property="og:url" content="https://sige25.dev/content/writeups/funpage/">
-    <meta property="og:image" content="https://sige25.dev/content/writeups/funpage/images/nmap.png">
+    <meta property="og:image" content="https://sige25.dev/content/writeups/funpage/images/og-card.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Nmap output for the Funpage machine">
     <meta property="article:published_time" content="2025-06-02">
+    <meta property="article:modified_time" content="2026-09-23">
     <meta name="twitter:card" content="summary_large_image">
     <link href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAJHRFWHRDb21tZW50AGNtaG1aSHRTTTIxalgzTm5NWEpmYzI1ZmJETjmOtQRBAAAAmklEQVR4nGNgGAxAjIGB4QYDA8N/EvENqF6GIKhAKIn4P1QvA4xDKoBZykBTA6ygmCwDJiEF2ARyDPiEZMBHcgw4imTAYXIMkGJgYOiHYkl8BnhAOUsYGBhkGQgDOaja/1C9DMwMDAxNSAbwMDAw1DMwMFyAhgMIg9ggMZAcSA1IbSNULwY4jSf5niLChQyLGBgYVuHAIDnqAgDBfEtYIHIh9wAAAABJRU5ErkJggg=="
           rel="icon" type="image/x-icon"/>
@@ -34,6 +39,7 @@
         "name": "Simon Gergely"
       },
       "datePublished": "2025-06-02",
+      "dateModified": "2026-09-23",
       "mainEntityOfPage": {
         "@type": "WebPage",
         "@id": "https://sige25.dev/content/writeups/funpage/"
@@ -53,7 +59,7 @@
 <header class="main-container">
     <div class="info-block">
         <h1>THM Write-Up</h1>
-        <h2>Room: <em>Funpage</em></h2>
+        <p class="subtitle">Room: <em>Funpage</em></p>
     </div>
 </header>
 
@@ -68,44 +74,58 @@
                 <h2>How many ports are open?</h2>
                 <p>First, we begin with reconnaissance. Let’s find out which services the target is running:</p>
                 <div class="code-block">
-                    <button type="button" class="copy-btn" aria-label="Copy this command" onclick="copyToClipboard(this)">Copy</button>
+                    <button type="button" class="copy-btn" aria-label="Copy this command">Copy</button>
                     <pre><code>sudo nmap -sS $IP</code></pre>
                 </div>
                 <p>The result:</p>
-                <picture class="writeup-figure">
-                    <source srcset="images/nmap.webp" type="image/webp">
-                    <img src="images/nmap.png" width="1610" height="458" alt="Nmap output" class="img-fluid writeup-img mb-4">
-                </picture>
+                <a class="writeup-zoom" href="images/nmap.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/nmap.webp" type="image/webp">
+                        <img src="images/nmap.png" width="1610" height="458" alt="Nmap output" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
                 <p>From the scan, we see that two ports are open: SSH and HTTP.</p>
 
                 <h2>What is the username?</h2>
                 <p>Let’s explore the target. We saw that there is an HTTP server running on it. Check this on:
                 <i>http://$IP/</i></p>
-                <picture class="writeup-figure">
-                    <source srcset="images/main-page.webp" type="image/webp">
-                    <img src="images/main-page.png" width="1667" height="812" alt="Main page" loading="lazy" class="img-fluid writeup-img mb-4">
-                </picture>
+                <a class="writeup-zoom" href="images/main-page.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/main-page.webp" type="image/webp">
+                        <img src="images/main-page.png" width="1667" height="812" alt="Main page" loading="lazy" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
                 <p>Nothing obvious stands out. Maybe we should inspect the page’s source code:</p>
-                <picture class="writeup-figure">
-                    <source srcset="images/main-source.webp" type="image/webp">
-                    <img src="images/main-source.png" width="2926" height="1190" alt="Main page source" loading="lazy" class="img-fluid writeup-img mb-4">
-                </picture>
+                <a class="writeup-zoom" href="images/main-source.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/main-source.webp" type="image/webp">
+                        <img src="images/main-source.png" width="2926" height="1190" alt="Main page source" loading="lazy" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
                 <p>Interesting. There is a huge blob of base64 encoded image. Make a note of it, maybe we should check
                 this later for hidden infos.</p>
                 <p>But first let's do a site discovery:</p>
                 <div class="code-block">
-                    <button type="button" class="copy-btn" aria-label="Copy this command" onclick="copyToClipboard(this)">Copy</button>
+                    <button type="button" class="copy-btn" aria-label="Copy this command">Copy</button>
                     <pre><code>gobuster -u http://$IP/ -w SecLists/Discovery/Web-Content/common.txt dir</code></pre>
                 </div>
+                <a class="writeup-zoom" href="images/gobuster.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/gobuster.webp" type="image/webp">
+                        <img src="images/gobuster.png" width="3068" height="1036" alt="Gobuster output" loading="lazy" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
                 <p>We can see that there is an additional directory on the server: <i>/dev</i></p>
                 <p>It contains a list, that seems not useful for us. But check the source code:</p>
-                <picture class="writeup-figure">
-                    <source srcset="images/dev-source.webp" type="image/webp">
-                    <img src="images/dev-source.png" width="1844" height="390" alt="Subpage source" loading="lazy" class="img-fluid writeup-img mb-4">
-                </picture>
+                <a class="writeup-zoom" href="images/dev-source.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/dev-source.webp" type="image/webp">
+                        <img src="images/dev-source.png" width="1844" height="390" alt="Subpage source" loading="lazy" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
                 <p>We see a base64 encoded text. We should decode it:</p>
                 <div class="code-block">
-                    <button type="button" class="copy-btn" aria-label="Copy this command" onclick="copyToClipboard(this)">Copy</button>
+                    <button type="button" class="copy-btn" aria-label="Copy this command">Copy</button>
                     <pre><code>echo $TEXT | base64 --decode</code></pre>
                 </div>
                 <p>The result seems not usable, but also seems very familiar. Looks like words in a different language:
@@ -117,17 +137,19 @@
                 Let's try access through that! We have a username. But what about the password? Earlier we read, that
                 the user doesn't like to use complicated passwords. So we should give brute force a try.</p>
                 <div class="code-block">
-                    <button type="button" class="copy-btn" aria-label="Copy this command" onclick="copyToClipboard(this)">Copy</button>
-                    <pre><code>hydra -l REDACTED -P ./SecLists/Passwords/Leaked-Databases/rockyou.txt.tar.gz $IP ssh</code></pre>
+                    <button type="button" class="copy-btn" aria-label="Copy this command">Copy</button>
+                    <pre><code>hydra -l REDACTED -P ./SecLists/Passwords/Leaked-Databases/rockyou.txt $IP ssh</code></pre>
                 </div>
                 <p>Indeed, we have a password:</p>
-                <picture class="writeup-figure">
-                    <source srcset="images/hydra.webp" type="image/webp">
-                    <img src="images/hydra.jpg" width="3294" height="492" alt="Hydra output" loading="lazy" class="img-fluid writeup-img mb-4">
-                </picture>
-                Let's access the machine:
+                <a class="writeup-zoom" href="images/hydra.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/hydra.webp" type="image/webp">
+                        <img src="images/hydra.jpg" width="3294" height="492" alt="Hydra output" loading="lazy" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
+                <p>Let's access the machine:</p>
                 <div class="code-block">
-                    <button type="button" class="copy-btn" aria-label="Copy this command" onclick="copyToClipboard(this)">Copy</button>
+                    <button type="button" class="copy-btn" aria-label="Copy this command">Copy</button>
                     <pre><code>ssh REDACTED@$IP</code></pre>
                 </div>
                 <p>And we are in. We can find the user flag in the user's home folder.</p>
@@ -137,52 +159,26 @@
                 <p>We should escalate the user's privileges. It would be a good idea to run linPEAS, but first check
                     if we have any sudo rights:</p>
                 <div class="code-block">
-                    <button type="button" class="copy-btn" aria-label="Copy this command" onclick="copyToClipboard(this)">Copy</button>
+                    <button type="button" class="copy-btn" aria-label="Copy this command">Copy</button>
                     <pre><code>sudo -l</code></pre>
                 </div>
                 <p>And we have:</p>
-                <picture class="writeup-figure">
-                    <source srcset="images/sudo.webp" type="image/webp">
-                    <img src="images/sudo.jpg" width="1080" height="113" alt="sudo rights" loading="lazy" class="img-fluid writeup-img mb-4">
-                </picture>
+                <a class="writeup-zoom" href="images/sudo.webp">
+                    <picture class="writeup-figure">
+                        <source srcset="images/sudo.webp" type="image/webp">
+                        <img src="images/sudo.jpg" width="1080" height="113" alt="sudo rights" loading="lazy" class="img-fluid writeup-img mb-4">
+                    </picture>
+                </a>
                 <p>The user can run <i>nano</i> as root. Let's check how to exploit it in
                     <a href="https://gtfobins.github.io/gtfobins/nano/" target="_blank" rel="noopener">GTFOBins</a>. Following the
                 instructions in there we can get us a root shell, and check the root flag in the root directory.</p>
                 <br/>
-                <p><a href="https://sige25.dev">SiGe</a></p>
+                <p><a href="/">SiGe</a></p>
             </div>
         </div>
     </div>
 </main>
-<script>
-    function copyToClipboard(button) {
-        const code = button.nextElementSibling.innerText;
-        const done = (label) => {
-            button.textContent = label;
-            setTimeout(() => button.textContent = 'Copy', 2000);
-        };
-        // The Clipboard API needs a secure context and can still reject
-        // (an unfocused document, for instance), so fall back rather than
-        // leaving the button silently dead.
-        const legacy = () => {
-            const field = document.createElement('textarea');
-            field.value = code;
-            field.setAttribute('readonly', '');
-            field.style.position = 'fixed';
-            field.style.top = '-1000px';
-            document.body.appendChild(field);
-            field.select();
-            let ok = false;
-            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-            field.remove();
-            done(ok ? 'Copied!' : 'Press Ctrl+C');
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(code).then(() => done('Copied!'), legacy);
-        } else {
-            legacy();
-        }
-    }
-</script>
+<p id="copy-status" class="visually-hidden" role="status"></p>
+<script src="copy.js"></script>
 </body>
 </html>

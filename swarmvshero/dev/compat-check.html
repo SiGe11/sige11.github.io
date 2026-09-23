@@ -91,6 +91,7 @@ try {
   canvas.style.display = 'none';
   document.body.appendChild(canvas);
   game = new Game(canvas, new Sfx());
+  game.keepRecords = false; // a probe run must not land in the player's record
   row('modules load and Game constructs', true, `champion: ${game.heroClass.name}`);
 } catch (e) {
   row('modules load and Game constructs', false, `${e.name}: ${e.message}`);

@@ -60,6 +60,8 @@ export const HELP_PAGES = [
         'Right-click       place a rally beacon — the swarm gathers and waits',
         'Q                 clear the rally beacon',
         'Space             Frenzy: release the swarm, buffed and ability-resistant',
+        'WASD / arrows     look around; the camera drifts back to the champion',
+        'Minimap           click or drag to look · right-click to rally · C recentre',
         'Mouse wheel       zoom    ·    Esc pause    ·    M mute    ·    H this guide',
       ]],
     ],
@@ -73,10 +75,10 @@ export const HELP_PAGES = [
         'The tier bar under its health is, in effect, a record of your mistakes.',
       ]],
       ['Corpses leave things behind', [
-        'About one death in twenty drops a pickup. Most are flasks — a loud boon for',
-        'ten seconds or so — and the rare spinning relics are permanent, nine a run.',
-        'The champion has to walk over one, so a drop is a piece of map to play',
-        'around: fight elsewhere, or take the trade. They fade after 13 seconds.',
+        'About one death in seventeen drops a pickup. Most are spinning relics —',
+        'permanent, up to nine a run — and the rest are flasks, a loud boon for ten',
+        'seconds or so. The champion has to walk over one, so a drop is a piece of',
+        'map to play around: fight elsewhere, or take the trade. They fade after 13s.',
       ]],
       ['The beacon steers, it does not store', [
         'Right-click gathers the swarm at a point instead of charging. Use it to pull',
@@ -136,8 +138,8 @@ export const HELP_PAGES = [
         'TITAN is a 520 HP brawler that walks in and holds the champion in place.',
         'It is the answer to a melee champion and to anything that has to be tanked.',
         'BOMBARDIER never enters the fight: it lobs shells over terrain from 410',
-        'away and splashes on impact. It is the only thing in the roster that can',
-        'clear a Summoner\u2019s wisps, and the only answer to a champion that kites.',
+        'away and splashes on impact. One shell clears a pack of a Summoner\u2019s',
+        'wisps, and it is the only real answer to a champion that kites.',
       ]],
     ],
   },
@@ -147,11 +149,16 @@ export const HELP_PAGES = [
   },
 ];
 
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+
 export class Hud {
   constructor(game) {
     this.game = game;
     this.hoverCard = null;
     this.helpPage = 0;
+    // True while a left press that began on the minimap is still held, so
+    // dragging across it scrubs the camera.
+    this.minimapDrag = false;
   }
 
   // ------------------------------------------------------------- primitives
@@ -343,6 +350,43 @@ export class Hud {
     return { x: g.width - w - 16, y: 56, w };
   }
 
+  /** Status chips under the champion's bars: debuffs, boons, wisps, intent. */
+  heroStatuses() {
+    const g = this.game;
+    const deb = g.heroDebuffs();
+    const statuses = [];
+    if (deb.shriekers > 0) {
+      statuses.push({ text: `Slowed ${Math.round(deb.slow * 100)}%`, color: '#7fdcff' });
+      statuses.push({ text: `Marked +${Math.round(deb.mark * 100)}%`, color: '#7fdcff' });
+    }
+    if (g.hero.poison > 0) statuses.push({ text: `Poison ${g.hero.poison.toFixed(0)}`, color: '#9dff7a' });
+    for (const boon of g.heroBoons) {
+      statuses.push({ text: `${boon.def.name} ${Math.ceil(boon.timer)}s`, color: boon.def.color });
+    }
+    if (g.allies.length) {
+      statuses.push({
+        text: `${g.allies.length} wisp${g.allies.length === 1 ? '' : 's'}`,
+        color: '#ffd489',
+      });
+    }
+    if (g.hero.state === 'retreat') statuses.push({ text: 'Retreating to a well', color: '#ffc98a' });
+    if (g.hero.state === 'reclaim') statuses.push({ text: 'Purging your wells', color: '#ff9a7a' });
+    return statuses;
+  }
+
+  /**
+   * The champion panel as drawn this frame. Chips wrap onto a second row once
+   * boons stack up, so the panel grows with them rather than clipping them.
+   */
+  heroPanelLayout() {
+    const g = this.game;
+    const finalStage = g.hero.stage >= HERO_STAGES.length - 1;
+    const statuses = this.heroStatuses();
+    const chipRows = statuses.length ? (statuses.length > 3 ? 2 : 1) : 0;
+    const rect = this.heroPanelRect((finalStage ? 20 : 0) + chipRows * 20);
+    return { rect, statuses, chipRows, finalStage };
+  }
+
   /**
    * The champion panel sits between the resource readout and the event feed,
    * so its width has to be derived from theirs — a fixed 440 overlapped both
@@ -371,6 +415,16 @@ export class Hud {
     return { x: g.width - w - 16, y: g.height - h - 96, w, h };
   }
 
+  /** World point under a screen point on the minimap, clamped to the map. */
+  minimapToWorld(p) {
+    const g = this.game;
+    const rect = this.minimapRect();
+    return {
+      x: clamp((p.x - rect.x) / rect.w, 0, 1) * g.world.width,
+      y: clamp((p.y - rect.y) / rect.h, 0, 1) * g.world.height,
+    };
+  }
+
   upgradeCardRects() {
     const g = this.game;
     const n = Math.max(1, g.upgradeChoices.length);
@@ -391,7 +445,7 @@ export class Hud {
 
   restartRect() {
     const g = this.game;
-    return { x: g.width / 2 - 100, y: g.height / 2 + 78, w: 200, h: 46 };
+    return { x: g.width / 2 - 100, y: g.height / 2 + 104, w: 200, h: 46 };
   }
 
   helpPanelRect() {
@@ -414,11 +468,34 @@ export class Hud {
     }));
   }
 
-  /** True when a screen point sits on any interactive HUD widget. */
+  /**
+   * The event feed's legible lines. The feed is bare text with no panel, so
+   * only the words themselves block clicks, and only until they fade — a
+   * fixed rect would leave an invisible dead zone in the corner.
+   */
+  feedLineRects() {
+    const g = this.game;
+    const { x, y, w } = this.feedRect();
+    const rects = [];
+    g.feed.forEach((entry, i) => {
+      if (entry.life < 0.3) return;
+      const tw = Math.min(w, this.measure(g.ctx, entry.text, { size: 12 }));
+      rects.push({ x: x + w - tw - 4, y: y + 4 + i * 19, w: tw + 8, h: 19 });
+    });
+    return rects;
+  }
+
+  /**
+   * True when a screen point sits on any HUD element, interactive or not. A
+   * click there must never fall through and open a rift underneath.
+   */
   pointerOverUi(p) {
     if (this.hit(this.frenzyRect(), p)) return true;
     if (this.hit(this.minimapRect(), p)) return true;
     if (this.hit(this.helpButtonRect(), p)) return true;
+    if (this.hit(this.resourcePanelRect(), p)) return true;
+    if (this.hit(this.heroPanelLayout().rect, p)) return true;
+    if (this.feedLineRects().some((rect) => this.hit(rect, p))) return true;
     return this.unitCardRects().some((rect) => this.hit(rect, p));
   }
 
@@ -428,10 +505,14 @@ export class Hud {
 
   // ------------------------------------------------------------------ clicks
 
-  /** Consumes clicks that landed on UI so they cannot also place a rift. */
+  /**
+   * Consumes clicks that landed on UI so they cannot also place a rift or a
+   * beacon. The minimap is the exception that acts: left-click looks there,
+   * right-click rallies there.
+   */
   handleHudClicks() {
     const g = this.game;
-    if (!g.clicks.length) return;
+    if (!g.clicks.length && !g.rightClicks.length) return;
 
     if (g.helpVisible) {
       for (const click of g.clicks) {
@@ -441,6 +522,7 @@ export class Hud {
         if (this.hit(this.helpButtonRect(), click)) g.helpVisible = false;
       }
       g.clicks = [];
+      g.rightClicks = [];
       return;
     }
 
@@ -465,10 +547,29 @@ export class Hud {
         g.tryFrenzy();
         consumed = true;
       }
-      if (!consumed && this.hit(this.minimapRect(), click)) consumed = true;
+      if (!consumed && this.hit(this.minimapRect(), click)) {
+        g.lookAt(this.minimapToWorld(click));
+        // Only a press still held becomes a drag. A quick click can release
+        // before this frame runs, and a stale flag would yank the camera on
+        // the next press anywhere.
+        this.minimapDrag = g.mouse.down;
+        consumed = true;
+      }
+      if (!consumed && this.pointerOverUi(click)) consumed = true;
       if (!consumed) remaining.push(click);
     }
     g.clicks = remaining;
+
+    const rightRemaining = [];
+    for (const click of g.rightClicks) {
+      if (this.hit(this.minimapRect(), click)) {
+        if (g.phase === 'playing') g.setRally(g.world.clampToArena(this.minimapToWorld(click), 12));
+        continue;
+      }
+      if (this.pointerOverUi(click)) continue;
+      rightRemaining.push(click);
+    }
+    g.rightClicks = rightRemaining;
   }
 
   handleUpgradeClicks() {
@@ -554,6 +655,8 @@ export class Hud {
   /** Ghost circle under the cursor showing whether a summon would land. */
   drawPlacementGhost(ctx) {
     const g = this.game;
+    // Over a panel a click will not summon, so the ghost must not promise one.
+    if (this.pointerOverUi(g.mouse)) return;
     const def = UNITS[g.selected];
     const p = g.mouse.world;
     const blocker = g.summonBlocker(g.selected, p);
@@ -638,7 +741,6 @@ export class Hud {
     });
 
     const wells = g.heldWells();
-    const clock = `${Math.floor(g.time / 60)}:${String(Math.floor(g.time % 60)).padStart(2, '0')}`;
     const rowSize = compact ? 11 : 12;
     this.text(ctx, `Wells ${wells}/${g.world.wells.length}`, x + 12, y + (compact ? 54 : 60), {
       size: rowSize, color: wells > 0 ? PALETTE.good : PALETTE.uiDim,
@@ -646,7 +748,7 @@ export class Hud {
     this.text(ctx, `Swarm ${g.units.length}/${CONFIG.maxUnits}`, x + 12, y + (compact ? 70 : 78), {
       size: rowSize, color: PALETTE.uiDim,
     });
-    this.text(ctx, clock, x + w - 12, y + (compact ? 70 : 78), {
+    this.text(ctx, clock(g.time), x + w - 12, y + (compact ? 70 : 78), {
       size: rowSize, color: PALETTE.uiDim, align: 'right',
     });
 
@@ -672,30 +774,7 @@ export class Hud {
   drawHeroPanel(ctx) {
     const g = this.game;
     const stats = g.heroStats();
-    const deb = g.heroDebuffs();
-    const finalStage = g.hero.stage >= HERO_STAGES.length - 1;
-    const statuses = [];
-    if (deb.shriekers > 0) {
-      statuses.push({ text: `Slowed ${Math.round(deb.slow * 100)}%`, color: '#7fdcff' });
-      statuses.push({ text: `Marked +${Math.round(deb.mark * 100)}%`, color: '#7fdcff' });
-    }
-    if (g.hero.poison > 0) statuses.push({ text: `Poison ${g.hero.poison.toFixed(0)}`, color: '#9dff7a' });
-    for (const boon of g.heroBoons) {
-      statuses.push({ text: `${boon.def.name} ${Math.ceil(boon.timer)}s`, color: boon.def.color });
-    }
-    if (g.allies.length) {
-      statuses.push({
-        text: `${g.allies.length} wisp${g.allies.length === 1 ? '' : 's'}`,
-        color: '#ffd489',
-      });
-    }
-    if (g.hero.state === 'retreat') statuses.push({ text: 'Retreating to a well', color: '#ffc98a' });
-    if (g.hero.state === 'reclaim') statuses.push({ text: 'Purging your wells', color: '#ff9a7a' });
-
-    // Chips wrap onto a second row once boons stack up, so the panel has to
-    // grow with them rather than clipping them at the border.
-    const chipRows = statuses.length ? (statuses.length > 3 ? 2 : 1) : 0;
-    const rect = this.heroPanelRect((finalStage ? 20 : 0) + chipRows * 20);
+    const { rect, statuses, chipRows, finalStage } = this.heroPanelLayout();
     const { x, y, w, h } = rect;
     this.panel(ctx, x, y, w, h, { stroke: 'rgba(255,210,140,0.28)' });
 
@@ -994,7 +1073,7 @@ export class Hud {
       add(`Never attacks. Heals every unit within ${def.mendRadius} for ${def.mendPerSecond}/s and keeps ${def.standoffRange} away from the champion`);
     }
     if (def.behavior === 'artillery') {
-      add(`Lobs over terrain and splashes ${def.splashRadius} on impact — the only answer to summoned wisps`);
+      add(`Lobs over terrain and splashes ${def.splashRadius} on impact — one shell clears a pack of wisps`);
     }
     if (def.summonCooldown) add(`${def.summonCooldown}s summon cooldown`);
     add('Summon inside a well to garrison it');
@@ -1130,10 +1209,17 @@ export class Hud {
     ctx.fill();
 
     const view = g.viewRect();
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    const returnsIn = g.cameraReturnsIn();
+    ctx.strokeStyle = returnsIn === null ? 'rgba(255,255,255,0.35)' : 'rgba(226,182,255,0.8)';
     ctx.lineWidth = 1;
     ctx.strokeRect(mx(view.x), my(view.y), view.w * sx, view.h * sy);
     ctx.restore();
+
+    if (returnsIn !== null) {
+      this.text(ctx, `Free camera · back in ${Math.ceil(returnsIn)}s · C`, rect.x + rect.w, rect.y - 12, {
+        size: 11, align: 'right', color: '#dcaeff', maxWidth: rect.w + 60,
+      });
+    }
   }
 
   drawObjectives(ctx) {
@@ -1295,6 +1381,14 @@ export class Hud {
       `${Math.round(g.stats.damageDealt)} damage dealt · ${g.stats.lost} units lost · ${g.stats.spawned} summoned`,
       `Champion: ${g.heroClass.name} ${g.heroStats().name} (tier ${g.hero.stage + 1}/${HERO_STAGES.length})`,
     ];
+    const { runs = 0, wins = 0, fastestWin } = g.prefs;
+    if (g.keepRecords && runs > 0) {
+      summary.push(`Record: ${wins} win${wins === 1 ? '' : 's'} in ${runs} run${runs === 1 ? '' : 's'}`
+        + (fastestWin !== undefined ? ` · fastest win ${clock(fastestWin)}` : ''));
+    }
+    summary.push(g.pinnedSeed !== null
+      ? `Seed ${g.seed} · pinned by the page address`
+      : `Seed ${g.seed} · add ?seed=${g.seed} to the address to replay this map and champion`);
     summary.forEach((line, i) => {
       this.text(ctx, line, g.width / 2, g.height / 2 + 4 + i * 20, {
         size: 13, align: 'center', color: PALETTE.uiDim, maxWidth: g.width - 80,
@@ -1451,7 +1545,7 @@ export class Hud {
     const g = this.game;
     this.text(ctx, 'It climbs this ladder on experience, and killing your units is where',
       x, y, { size: 13, color: PALETTE.ui, maxWidth: w });
-    this.text(ctx, 'nearly all of it comes from. Each tier adds a new ability.',
+    this.text(ctx, 'nearly all of it comes from. Each tier swaps in a new ability.',
       x, y + 19, { size: 13, color: PALETTE.ui, maxWidth: w });
 
     let cursorY = y + 50;
@@ -1494,8 +1588,8 @@ export class Hud {
     for (const line of [
       'Templar tanks · Duelist swings fast · Arcanist casts wide · Huntress kites.',
       'Summoner calls wisps that fight beside it. Wisps burn out on their own, pay',
-      'Aether when killed, and give no experience — but only a Bombardier can',
-      'reach them without your swarm walking into the champion first.',
+      'Aether when killed, and give no experience. They come to your swarm, and',
+      'any unit that attacks swats one in reach; a Bombardier shell clears a pack.',
     ]) {
       this.text(ctx, line, x, cursorY, { size: 13, color: PALETTE.ui, maxWidth: w });
       cursorY += 19;

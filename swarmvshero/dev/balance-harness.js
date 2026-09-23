@@ -17,11 +17,31 @@
 // world, caps exceeded). Balance targets: roughly a 50% win rate for __DUMB
 // and no violations. Sample at least 40 runs — run-to-run variance is high
 // enough that n=10 readings swing by 30 points.
+//
+// Seeds make a batch reproducible:
+//
+//   window.__suite(window.__DUMB, 200, { seed: 1 })  // runs use seeds 1..200
+//
+// Every roll — map, champion, combat, and the bots' own choices — comes from
+// that seed, so the same call on the same build gives the same result. To
+// judge a change, run the same seeded batch before and after it: both builds
+// then play the same maps against the same champions, and `results` lists
+// each run's seed so the ones that flipped can be replayed with __play.
 
 window.__SLOTS = [['mite'],['flinger'],['mauler'],['burrower'],['shrieker'],
   ['matriarch','mender'],['titan','bombardier']];
 
 window.__step = (g, dt) => { g.update(dt); g.clicks.length = 0; g.rightClicks.length = 0; };
+
+/** mulberry32. The bots draw from this, reseeded per run, never Math.random. */
+window.__rng = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) >>> 0;
+  let t = seed;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+window.__R = window.__rng(1);
 
 /** Invariants that must hold every frame. Returns a list of violations. */
 window.__check = (g) => {
@@ -65,6 +85,8 @@ window.__check = (g) => {
   if (g.phase === 'choose' && !g.unitChoice) bad.push('choose phase without a choice');
   if (g.phase === 'playing' && g.unitChoice) bad.push('pending choice clobbered by another phase');
   if (g.feed.length > 6) bad.push(`feed ${g.feed.length}`);
+  // Garrisons look their well up by index; a reordered array misroutes them.
+  if (g.world.wells.some((w, i) => w.id !== i)) bad.push('wells reordered');
   return bad;
 };
 
@@ -80,12 +102,12 @@ window.__DUMB = (g, i) => {
   for (const w of g.world.wells) {
     const guards = g.units.filter(u => u.job === w.id).length;
     if (guards >= (w.owner === 'swarm' ? 2 : 3)) continue;
-    const p = { x: w.x + (Math.random()-0.5)*60, y: w.y + (Math.random()-0.5)*60 };
+    const p = { x: w.x + (window.__R()-0.5)*60, y: w.y + (window.__R()-0.5)*60 };
     const id = affordableAt(g, ['mauler','mite'], p);
     if (id) { g.trySummon(id, p); done = true; break; }
   }
   if (!done) {
-    const a = Math.random()*Math.PI*2, r = g.minSpawnRange()+30;
+    const a = window.__R()*Math.PI*2, r = g.minSpawnRange()+30;
     const p = { x: g.hero.x + Math.cos(a)*r, y: g.hero.y + Math.sin(a)*r };
     const id = affordableAt(g, ['titan','bombardier','matriarch','mender','shrieker','burrower','flinger','mauler','mite'], p);
     if (id) g.trySummon(id, p);
@@ -108,14 +130,14 @@ window.__SMART = (g, i) => {
     const guards = g.units.filter(u => u.job === w.id).length;
     if (guards >= (w.owner === 'swarm' ? 2 : 3)) continue;
     if (Math.hypot(g.hero.x-w.x, g.hero.y-w.y) < 300) continue;
-    const p = { x: w.x + (Math.random()-0.5)*70, y: w.y + (Math.random()-0.5)*70 };
+    const p = { x: w.x + (window.__R()-0.5)*70, y: w.y + (window.__R()-0.5)*70 };
     const id = affordableAt(g, ['matriarch','mender','mauler','mite'], p);
     if (id) { g.trySummon(id, p); done = true; break; }
   }
   if (!done) {
     const free = g.units.filter(u => u.job === null).length;
     const base = (free < 24 && g.frenzyCooldown > 4 && g.rally) ? g.rally : g.hero;
-    const a = Math.random()*Math.PI*2;
+    const a = window.__R()*Math.PI*2;
     const r = base === g.hero ? g.minSpawnRange()+25 : 120;
     const p = { x: base.x + Math.cos(a)*r, y: base.y + Math.sin(a)*r };
     const id = affordableAt(g, ['titan','bombardier','matriarch','mender','shrieker','burrower','flinger','mauler','mite'], p);
@@ -131,7 +153,7 @@ window.__SMART = (g, i) => {
  */
 window.__STAGE = (g, i) => {
   if (i % 30 === 0) {
-    const a = Math.random() * Math.PI * 2;
+    const a = window.__R() * Math.PI * 2;
     const p = { x: g.hero.x + Math.cos(a) * 380, y: g.hero.y + Math.sin(a) * 380 };
     g.world.clampToArena(p, 60);
     if (!g.world.blocked(p, 30)) g.rally = p;
@@ -142,13 +164,13 @@ window.__STAGE = (g, i) => {
     const guards = g.units.filter(u => u.job === w.id).length;
     if (guards >= (w.owner === 'swarm' ? 2 : 3)) continue;
     if (Math.hypot(g.hero.x - w.x, g.hero.y - w.y) < 280) continue;
-    const p = { x: w.x + (Math.random()-0.5)*70, y: w.y + (Math.random()-0.5)*70 };
+    const p = { x: w.x + (window.__R()-0.5)*70, y: w.y + (window.__R()-0.5)*70 };
     const id = affordableAt(g, ['matriarch','mender','mauler','mite'], p);
     if (id) { g.trySummon(id, p); done = true; break; }
   }
   if (!done) {
     const base = (g.frenzyCooldown > 3 && g.rally) ? g.rally : g.hero;
-    const a = Math.random() * Math.PI * 2;
+    const a = window.__R() * Math.PI * 2;
     const r = base === g.hero ? g.minSpawnRange() + 25 : 110;
     const p = { x: base.x + Math.cos(a)*r, y: base.y + Math.sin(a)*r };
     const id = affordableAt(g, ['titan','bombardier','matriarch','mender','shrieker','burrower','flinger','mauler','mite'], p);
@@ -160,19 +182,26 @@ window.__STAGE = (g, i) => {
 
 window.__play = (bot, opts = {}) => {
   const g = window.__swarm;
-  // opts.cls forces a champion archetype so a single class can be sampled.
+  g.keepRecords = false; // simulated runs must not land in the player's record
+  // opts.seed replays one run exactly. opts.cls forces a champion archetype so
+  // a single class can be sampled; with a seed it steps to the next seeds
+  // (far apart, so they do not collide with a suite's) until the class fits.
   let guard = 0;
-  do { g.newRun(); guard += 1; } while (opts.cls && g.heroClass.id !== opts.cls && guard < 400);
+  do {
+    g.newRun(opts.seed === undefined ? undefined : (opts.seed + guard * 1000003) >>> 0);
+    guard += 1;
+  } while (opts.cls && g.heroClass.id !== opts.cls && guard < 400);
+  window.__R = window.__rng((g.seed ^ 0x5bd1e995) >>> 0);
   g.phase = 'playing';
   const dt = 1/60; const errors = []; const violations = new Set();
   const maxFrames = (opts.maxSeconds ?? 900) * 60;
   for (let i = 0; i < maxFrames; i++) {
     try {
-      if (g.phase === 'upgrade') g.chooseUpgrade(g.upgradeChoices[Math.floor(Math.random()*g.upgradeChoices.length)]);
+      if (g.phase === 'upgrade') g.chooseUpgrade(g.upgradeChoices[Math.floor(window.__R()*g.upgradeChoices.length)]);
       if (g.phase === 'choose') {
         const opts2 = g.unitChoice.options;
         const forced = opts.strains && opts.strains[g.unitChoice.slot];
-        g.chooseUnit(forced ?? opts2[Math.floor(Math.random()*opts2.length)]);
+        g.chooseUnit(forced ?? opts2[Math.floor(window.__R()*opts2.length)]);
       }
       if (g.phase !== 'playing') break;
       bot(g, i);
@@ -181,17 +210,17 @@ window.__play = (bot, opts = {}) => {
     } catch (e) { errors.push(`${i}: ${e.message} | ${(e.stack||'').split('\n')[1]}`); if (errors.length > 2) break; }
   }
   try { g.render(); } catch (e) { errors.push('render: ' + e.message); }
-  return { cls: g.heroClass.id, res: g.phase, t: Math.round(g.time), tier: g.hero.stage+1,
+  return { seed: g.seed, cls: g.heroClass.id, res: g.phase, t: Math.round(g.time), tier: g.hero.stage+1,
     strains: g.roster.slice(5).join('+'),
     lost: g.stats.lost, dmg: Math.round(g.stats.damageDealt), ups: g.takenUpgrades.length,
     wells: g.heldWells(), relics: g.heroRelics.length,
     errors, violations: [...violations] };
 };
 
-window.__suite = (bot, n, opts) => {
+window.__suite = (bot, n, opts = {}) => {
   const out = []; const byClass = {};
   for (let i = 0; i < n; i++) {
-    const r = window.__play(bot, opts);
+    const r = window.__play(bot, { ...opts, seed: opts.seed === undefined ? undefined : opts.seed + i });
     out.push(r);
     byClass[r.cls] = byClass[r.cls] ?? { w: 0, n: 0 };
     byClass[r.cls].n += 1;
@@ -216,6 +245,7 @@ window.__suite = (bot, n, opts) => {
     unfinished: out.filter(o => o.res === 'playing').length,
     errors: [...new Set(out.flatMap(o => o.errors))].slice(0, 5),
     violations: [...new Set(out.flatMap(o => o.violations))].slice(0, 8),
+    results: out.map(o => `${o.seed}:${o.res === 'victory' ? 'W' : o.res === 'defeat' ? 'L' : '?'}`).join(' '),
   };
 };
 'harness loaded'

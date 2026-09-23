@@ -5,27 +5,62 @@
 // stronger from every unit it kills, so feeding it chaff is how you lose.
 
 import {
-  CONFIG, PALETTE, UNITS, UNIT_ORDER, UNIT_SLOTS, SLOT_UNLOCK_AT, DEBUFF_CAPS,
+  CONFIG, PALETTE, UNITS, UNIT_SLOTS, SLOT_UNLOCK_AT, DEBUFF_CAPS,
   HERO_STAGES, HERO_ABILITIES, HERO_CLASSES, HERO_RELICS, HERO_BOONS, ALLY,
   SWARM_UPGRADES, baseModifiers, baseHeroMods,
 } from './config.js';
 import {
-  clamp, lerp, rand, pick, chance, dist, dist2, angleTo,
-  approachAngle, damp, smoothstep,
+  clamp, lerp, random, randomSeed, seedRandom, rand, pick, chance, dist, dist2,
+  angleTo, approachAngle, damp, smoothstep,
 } from './math.js';
 import { World } from './world.js';
 import { Fx, randomIchor } from './fx.js';
 import {
   drawGround, drawArenaBorder, drawWell, drawTerrain, drawTerrainShadow,
   drawUnit, drawHero, drawRift, drawTelegraph, drawRally, drawProjectile,
-  drawRelic, drawAlly,
+  drawRelic, drawAlly, drawChampionMarks, drawAscension,
 } from './art.js';
 import { Hud } from './hud.js';
+import { loadPrefs, savePrefs } from './prefs.js';
 
 const TAU = Math.PI * 2;
 
+/** Held keys that steer the free camera, as screen-space directions. */
+const PAN_KEYS = {
+  w: [0, -1], arrowup: [0, -1],
+  s: [0, 1], arrowdown: [0, 1],
+  a: [-1, 0], arrowleft: [-1, 0],
+  d: [1, 0], arrowright: [1, 0],
+};
+
+/**
+ * Simulation order within one frame. `update` stops walking it the moment
+ * the phase leaves 'playing' — a champion that has just fallen must not go on
+ * to evolve, heal, claim a relic or finish its ascension timer and turn the
+ * win into a loss.
+ */
+const SIM_STEPS = [
+  'updateUnlocks', 'updateEconomy', 'updateWells', 'updateRifts', 'updateUnits',
+  'updateAllies', 'updateHero', 'updateProjectiles', 'updateRelics', 'updateProgression',
+];
+
+/** Nearest item of `list` to `from`, without reordering `list`. */
+const nearest = (list, from) => {
+  let best = null;
+  let bestD = Infinity;
+  for (const item of list) {
+    const d = dist2(from, item);
+    if (d < bestD) { bestD = d; best = item; }
+  }
+  return best;
+};
+
 export class Game {
-  constructor(canvas, sfx) {
+  /**
+   * `opts.seed` pins every run to one seed (the `?seed=` URL parameter);
+   * without it each run draws a fresh one.
+   */
+  constructor(canvas, sfx, opts = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
     if (!this.ctx) throw new Error('2D canvas context is required');
@@ -37,13 +72,27 @@ export class Game {
     this.height = 720;
     this.dpr = 1;
 
-    this.camera = { x: 0, y: 0, zoom: CONFIG.zoomDefault };
+    // `free` is the free-look point while the player steers the camera; `idle`
+    // counts how long they have left it alone, and `settle` how long ago it
+    // started gliding back to the champion.
+    this.camera = { x: 0, y: 0, zoom: CONFIG.zoomDefault, free: null, idle: 0, settle: Infinity };
     this.mouse = { x: 0, y: 0, world: { x: 0, y: 0 }, down: false };
     this.clicks = [];
     this.rightClicks = [];
+    this.panKeys = new Set();
 
     this.helpVisible = false;
     this.lastTime = performance.now();
+    // The rest of the site honours prefers-reduced-motion; so does the game.
+    // A live query, so flipping the OS setting mid-run takes effect at once.
+    this.motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+
+    this.pinnedSeed = opts.seed ?? null;
+    // Dev tools that simulate hundreds of runs switch this off so they do not
+    // write into the player's record.
+    this.keepRecords = true;
+    this.prefs = loadPrefs();
+    this.sfx.setMuted(Boolean(this.prefs.muted));
 
     this.resize();
     this.newRun();
@@ -53,7 +102,11 @@ export class Game {
 
   // -------------------------------------------------------------- run setup
 
-  newRun() {
+  newRun(seed = this.pinnedSeed ?? randomSeed()) {
+    // Seeded before anything rolls, so the same seed rebuilds the same map
+    // and champion.
+    this.seed = seed >>> 0;
+    seedRandom(this.seed);
     this.world = new World();
     this.groundPattern = this.ctx.createPattern(this.world.groundTile, 'repeat');
     this.fx.clear();
@@ -128,12 +181,15 @@ export class Game {
     };
 
     this.ascension = 0;
+    this.heartbeat = 0;
     this.heroDamageAccum = 0;
     this.heroDamageTimer = 0;
     this.endReason = '';
     this.camera.x = this.hero.x;
     this.camera.y = this.hero.y;
     this.camera.zoom = CONFIG.zoomDefault;
+    this.camera.free = null;
+    this.camera.settle = Infinity;
     this.refreshHeroCache();
 
     this.log(`Champion: ${this.heroClass.name} — ${this.heroClass.blurb}`, PALETTE.hero);
@@ -199,7 +255,10 @@ export class Game {
     });
 
     window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) this.mouse.down = false;
+      if (e.button === 0) {
+        this.mouse.down = false;
+        this.hud.minimapDrag = false;
+      }
     });
 
     canvas.addEventListener('wheel', (e) => {
@@ -208,19 +267,52 @@ export class Game {
       this.camera.zoom = clamp(this.camera.zoom * step, CONFIG.zoomMin, CONFIG.zoomMax);
     }, { passive: false });
 
+    window.addEventListener('keyup', (e) => {
+      this.panKeys.delete(e.key.toLowerCase());
+    });
+
+    // Losing focus pauses a live run, so alt-tabbing away mid-fight does not
+    // cost the swarm. Held keys are dropped too: their keyup lands elsewhere.
+    const suspend = () => {
+      this.panKeys.clear();
+      this.mouse.down = false;
+      this.hud.minimapDrag = false;
+      if (this.phase === 'playing') this.phase = 'paused';
+    };
+    window.addEventListener('blur', suspend);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        suspend();
+        this.sfx.suspend(); // the ambient bed would otherwise hum on in a background tab
+      } else {
+        this.sfx.resume();
+      }
+    });
+
     window.addEventListener('keydown', (e) => {
+      // Browser and OS shortcuts (Cmd+M, Cmd+H, Ctrl+1...) are not game input.
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        this.panKeys.clear();
+        return;
+      }
       this.sfx.unlock();
       const key = e.key.toLowerCase();
 
-      if (key >= '1' && key <= '9') {
-        const n = Number(key) - 1;
-        // While a slot choice is open the digits pick a candidate instead.
+      // Digits by physical key first, so layouts that put symbols on the
+      // unshifted number row (AZERTY) still work; `key` is the fallback for
+      // synthetic events that carry no `code`.
+      const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code ?? '')?.[1]
+        ?? (/^[1-9]$/.test(key) ? key : null);
+      if (digit) {
+        // Auto-repeat from a held key never counts: it used to pick a strain
+        // before the player saw the panel, and to empty the Aether bank one
+        // rift per repeat.
+        if (e.repeat) return;
+        const n = Number(digit) - 1;
+        // While a slot choice is open the digits pick a candidate instead,
+        // and only after a short settling window.
         if (this.phase === 'choose') {
-          // A key already held down when the panel opens keeps firing keydown
-          // through auto-repeat, which used to pick a strain before the player
-          // ever saw the screen. Only a fresh press, after a short settling
-          // window, counts.
-          if (e.repeat || this.panelAge < CONFIG.panelInputDelay) return;
+          if (this.panelAge < CONFIG.panelInputDelay) return;
           const pickId = this.unitChoice?.options[n];
           if (pickId) this.chooseUnit(pickId);
           return;
@@ -238,10 +330,19 @@ export class Game {
         return;
       }
 
+      if (PAN_KEYS[key]) {
+        e.preventDefault();
+        this.panKeys.add(key);
+        return;
+      }
+
       switch (key) {
         case ' ':
           e.preventDefault();
-          if (this.phase === 'playing') this.tryFrenzy();
+          this.tryFrenzy();
+          break;
+        case 'c':
+          this.recenterCamera();
           break;
         case 'q':
           if (this.rally) {
@@ -252,10 +353,13 @@ export class Game {
         case 'h':
         case '?':
         case 'f1':
+          e.preventDefault(); // F1 would also open the browser's own help
           this.helpVisible = !this.helpVisible;
           break;
         case 'm':
           this.sfx.setMuted(!this.sfx.muted);
+          this.prefs.muted = this.sfx.muted;
+          savePrefs(this.prefs);
           this.log(this.sfx.muted ? 'Sound off' : 'Sound on', PALETTE.uiDim);
           break;
         case 'escape':
@@ -292,6 +396,7 @@ export class Game {
   update(dt) {
     this.mouse.world = this.screenToWorld(this.mouse.x, this.mouse.y);
     this.fx.update(dt);
+    this.updateAudio(dt);
 
     for (const entry of this.feed) entry.life -= dt;
     if (this.feed.some((f) => f.life <= 0)) this.feed = this.feed.filter((f) => f.life > 0);
@@ -339,21 +444,20 @@ export class Game {
     this.handleWorldClicks();
 
     this.time += dt;
+    const maxHpBefore = this.heroStats().maxHp;
     this.threat = 1 + (this.time / 60) * CONFIG.threatRampPerMinute;
     // Boons expire into the stat cache, so they have to tick first.
     this.updateBoons(dt);
     this.refreshHeroCache();
+    // The threat ramp raises max HP a little every frame. Carry current HP
+    // along at the same fraction, as evolution does; otherwise the bar drains
+    // with nothing hitting it and the retreat and purge thresholds creep up.
+    this.hero.hp *= this.heroStats().maxHp / maxHpBefore;
 
-    this.updateUnlocks();
-    this.updateEconomy(dt);
-    this.updateWells(dt);
-    this.updateRifts(dt);
-    this.updateUnits(dt);
-    this.updateAllies(dt);
-    this.updateHero(dt);
-    this.updateProjectiles(dt);
-    this.updateRelics(dt);
-    this.updateProgression(dt);
+    for (const step of SIM_STEPS) {
+      this[step](dt);
+      if (this.phase !== 'playing') break;
+    }
     this.updateCamera(dt);
 
     this.heroDamageTimer -= dt;
@@ -494,7 +598,7 @@ export class Game {
 
     this.fx.ring(p.x, p.y, def.radius * 4, 'rgba(200,110,255,0.8)', { life: 0.45 });
     this.fx.burst(p.x, p.y, PALETTE.swarmGlow, 14, 130);
-    this.sfx.play(def.summonCooldown ? 'summonTitan' : 'spawn');
+    this.sfxAt(def.summonCooldown ? 'summonTitan' : 'spawn', p);
     if (def.summonCooldown) {
       this.fx.addShake(0.7);
       this.log(`A ${def.name} tears through`, '#ff8fb0');
@@ -583,7 +687,7 @@ export class Game {
           well.owner = 'neutral';
           this.hero.xp += CONFIG.heroXpPerWellPurge;
           this.log('The champion purged a well', PALETTE.danger);
-          this.sfx.play('lose_well');
+          this.sfxAt('lose_well', well, { fade: false });
           this.fx.ring(well.x, well.y, well.radius * 1.4, 'rgba(255,210,140,0.9)', { life: 0.7 });
         }
       } else if (swarmCount >= CONFIG.wellUnitsToCapture) {
@@ -592,7 +696,7 @@ export class Game {
         if (well.progress >= 1 && well.owner !== 'swarm') {
           well.owner = 'swarm';
           this.log('Well corrupted — Aether income up', PALETTE.good);
-          this.sfx.play('capture');
+          this.sfxAt('capture', well, { fade: false });
           this.fx.ring(well.x, well.y, well.radius * 1.6, 'rgba(200,120,255,0.9)', { life: 0.8, fill: true });
           this.fx.burst(well.x, well.y, PALETTE.swarmGlow, 26, 150);
         }
@@ -670,10 +774,24 @@ export class Game {
   }
 
   /** Steering away from an active telegraph, if the player took Dispersal. */
-  dodgeVector(unit) {
+  dodgeVector(unit, def) {
     if (!this.mods.dodgeTelegraphs || !this.telegraph) return null;
     const tel = this.telegraph;
-    if (tel.shape === 'line') return null;
+    if (tel.shape === 'line') {
+      // Dash Strike hits anything the champion's body passes over, so the
+      // danger lane is its radius plus the unit's either side of the axis.
+      const ax = Math.cos(tel.angle);
+      const ay = Math.sin(tel.angle);
+      const rx = unit.x - tel.x;
+      const ry = unit.y - tel.y;
+      const along = rx * ax + ry * ay;
+      const side = ry * ax - rx * ay;
+      const reach = (this.heroStats().radius + def.radius + 6) * 1.35;
+      if (along < -reach || along > tel.length + reach || Math.abs(side) > reach) return null;
+      // Step out sideways, toward whichever edge is nearer.
+      const s = side < 0 ? -1 : 1;
+      return { x: -ay * s, y: ax * s };
+    }
     const d = dist(unit, tel);
     if (d > tel.radius * 1.35 || d < 1e-3) return null;
     return { x: (unit.x - tel.x) / d, y: (unit.y - tel.y) / d };
@@ -700,6 +818,7 @@ export class Game {
         if (unit.burrowed && toHero < def.surfaceRange) {
           unit.burrowed = false;
           unit.ambushReady = true;
+          this.sfxAt('surface', unit);
           this.fx.burst(unit.x, unit.y, '#7a4a2a', 16, 150, { gravity: 260 });
           this.fx.ring(unit.x, unit.y, def.radius * 3, 'rgba(190,140,255,0.7)', { life: 0.35 });
         } else if (!unit.burrowed && toHero > def.surfaceRange * 1.5) {
@@ -726,7 +845,7 @@ export class Game {
             const hatched = this.units[this.units.length - 1];
             if (hatched) hatched.job = unit.job; // inherits her garrison duty
             this.fx.ring(spot.x, spot.y, 26, 'rgba(226,140,255,0.7)', { life: 0.4 });
-            this.sfx.play('spawn');
+            this.sfxAt('spawn', spot);
           }
         }
       }
@@ -764,7 +883,7 @@ export class Game {
       }
 
       const desired = { x: 0, y: 0 };
-      const dodge = this.dodgeVector(unit);
+      const dodge = this.dodgeVector(unit, def);
 
       if (dodge) {
         desired.x += dodge.x * 2.2;
@@ -908,7 +1027,7 @@ export class Game {
             color: lob ? '#ffb066' : '#c6ff8a',
             trail: [],
           });
-          this.sfx.play(lob ? 'boom' : 'spit');
+          this.sfxAt(lob ? 'boom' : 'spit', unit);
         } else {
           unit.attackTimer = def.attackCooldown * 0.4;
         }
@@ -946,7 +1065,7 @@ export class Game {
 
     this.fx.burst(unit.x, unit.y, '#a63fd6', 14 + def.radius, 120 + def.radius * 4, { gravity: 120 });
     this.fx.decal(unit.x, unit.y + def.radius * 0.3, randomIchor(), def.radius * 1.5);
-    this.sfx.play('death');
+    this.sfxAt('death', unit);
 
     if (this.mods.deathBurst > 0 && dist(unit, this.hero) < 78) {
       this.damageHero(this.mods.deathBurst, unit, { silent: true });
@@ -1011,7 +1130,7 @@ export class Game {
       this.fx.ring(spot.x, spot.y, 34, 'rgba(255,226,168,0.85)', { life: 0.45 });
       this.fx.burst(spot.x, spot.y, '#ffe9a8', 12, 120);
     }
-    this.sfx.play('spawn');
+    this.sfxAt('spawn', hero);
     this.log(`The ${this.heroClass.name} calls its wisps`, PALETTE.hero);
   }
 
@@ -1058,7 +1177,7 @@ export class Game {
       color: lob ? '#ffb066' : '#c6ff8a',
       trail: [],
     });
-    this.sfx.play(lob ? 'boom' : 'spit');
+    this.sfxAt(lob ? 'boom' : 'spit', unit);
   }
 
   damageAlly(wisp, amount) {
@@ -1074,7 +1193,7 @@ export class Game {
     this.gain(CONFIG.allyAetherOnKill);
     this.fx.burst(wisp.x, wisp.y, '#ffe4b0', 18, 170);
     this.fx.ring(wisp.x, wisp.y, 40, 'rgba(255,220,160,0.7)', { life: 0.4 });
-    this.sfx.play('death');
+    this.sfxAt('death', wisp);
   }
 
   updateAllies(dt) {
@@ -1265,10 +1384,14 @@ export class Game {
       }
     }
 
-    // Poison ticks regardless of what the hero is doing.
+    // Poison ticks regardless of what the hero is doing. It stays raw damage
+    // — unmarked, and paying no Aether: routed through damageHero it measured
+    // as a ten-point win-rate swing, because a full stack out-earned base
+    // income. It does count toward the damage total on the end screen.
     if (hero.poison > 0) {
       const tick = hero.poison * 0.55 * dt;
       hero.hp -= tick;
+      this.stats.damageDealt += tick;
       hero.poison = Math.max(0, hero.poison - dt * 0.9);
       if (chance(dt * 8)) {
         this.fx.particle({
@@ -1308,23 +1431,17 @@ export class Game {
       && corrupted.length >= CONFIG.heroReclaimAtWells
       && hero.reclaimCooldown <= 0
       && hero.hp > maxHp * 0.55) {
-      hero.reclaimTarget = corrupted
-        .slice()
-        .sort((a, b) => dist2(hero, a) - dist2(hero, b))[0];
+      hero.reclaimTarget = nearest(corrupted, hero);
       hero.reclaimTimer = CONFIG.heroReclaimDuration;
       this.log('The champion moves to purge a well', PALETTE.danger);
     }
 
+    // Never sort world.wells in place: garrisons look their well up by index,
+    // and a reordered array sent them walking to the wrong one.
     let refuge = null;
-    if (hurt) {
-      refuge = this.world.wells
-        .filter((w) => w.owner !== 'swarm')
-        .sort((a, b) => dist2(hero, a) - dist2(hero, b))[0] ?? null;
-    }
+    if (hurt) refuge = nearest(this.world.wells.filter((w) => w.owner !== 'swarm'), hero);
     // If the swarm holds every well, the hero comes to break one instead.
-    if (hurt && !refuge) {
-      refuge = this.world.wells.sort((a, b) => dist2(hero, a) - dist2(hero, b))[0] ?? null;
-    }
+    if (hurt && !refuge) refuge = nearest(this.world.wells, hero);
     hero.state = hurt && refuge ? 'retreat'
       : hero.reclaimTarget ? 'reclaim'
         : target ? 'hunt' : 'patrol';
@@ -1462,7 +1579,7 @@ export class Game {
           hero.y + Math.sin(hero.facing) * stats.radius * 0.8,
           hero.facing, reach * 1.1, '#fff2c4', { arc: 2.4, width: 9 },
         );
-        this.sfx.play('hit');
+        this.sfxAt('hit', hero);
       }
     }
 
@@ -1505,7 +1622,8 @@ export class Game {
     const radiusMult = this.heroMod('aoeRadiusMult');
 
     hero.abilityTimer = spec.cooldown * this.heroMod('abilityCooldownMult');
-    this.sfx.play('telegraph');
+    // A warning: panned, but never faded, wherever the camera is looking.
+    this.sfxAt('telegraph', hero, { fade: false });
 
     if (stats.ability === 'dash') {
       const target = this.nearestUnit(hero);
@@ -1622,7 +1740,7 @@ export class Game {
             this.damageUnit(u, action.spec.tickDamage * this.threat, { source: 'ability' });
           }
         }
-        this.sfx.play('hit');
+        this.sfxAt('hit', hero);
       }
       if (action.t >= action.spec.duration) hero.action = null;
       return;
@@ -1637,7 +1755,7 @@ export class Game {
 
     if (action.kind === 'dash') {
       this.fx.addShake(0.5);
-      this.sfx.play('boom');
+      this.sfxAt('boom', hero);
       return;
     }
 
@@ -1655,7 +1773,7 @@ export class Game {
     this.fx.burst(cx, cy, '#ffe6b0', 40, 340);
     this.fx.addShake(action.kind === 'nova' ? 1.2 : 0.8);
     this.fx.addFlash(action.kind === 'nova' ? 0.4 : 0.22, '255,230,180');
-    this.sfx.play('boom');
+    this.sfxAt('boom', { x: cx, y: cy });
 
     for (const u of this.units) {
       if (!this.targetable(u)) continue;
@@ -1745,8 +1863,8 @@ export class Game {
 
   /**
    * Corpses occasionally leave something the champion can walk over. Most of
-   * it is a short, loud boon; permanent relics are the rare tail, and capped,
-   * because a long grind used to hand the champion a dozen of them.
+   * it is a permanent relic, capped per run because a long grind used to hand
+   * the champion a dozen of them; the rest are short, loud boons.
    */
   spawnDrop(x, y) {
     if (this.relics.length >= CONFIG.maxDropsOnField) return;
@@ -1785,7 +1903,9 @@ export class Game {
       }
       this.fx.text(this.hero.x, this.hero.y - 40, r.relic.name, r.relic.color, { size: 16 });
       this.fx.ring(this.hero.x, this.hero.y, 60, r.relic.color, { life: 0.6 });
-      this.sfx.play('upgrade');
+      // The champion getting stronger: its own darker sound, never the
+      // chime the swarm's upgrades use.
+      this.sfxAt('heroEmpower', this.hero, { fade: false });
     }
     this.relics = this.relics.filter((r) => r.life > 0);
   }
@@ -1857,7 +1977,7 @@ export class Game {
       // burying the screen in single-digit numbers.
       this.heroDamageAccum += dmg;
       this.fx.hit(from.x, from.y, PALETTE.swarmGlow, 7, 130);
-      this.sfx.play('heroHit');
+      this.sfxAt('heroHit', this.hero);
     }
     if (dmg > 30) this.fx.addShake(0.28);
 
@@ -1872,12 +1992,25 @@ export class Game {
     for (const u of this.units) u.dashHit = false;
     this.allies = [];
     this.phase = 'victory';
+    this.recordResult(true);
     this.endReason = `The ${this.heroStats().name} fell after ${Math.floor(this.time)}s.`;
     this.fx.burst(this.hero.x, this.hero.y, '#ffd9a0', 70, 420, { gravity: 200 });
     this.fx.ring(this.hero.x, this.hero.y, 320, 'rgba(255,220,160,0.9)', { life: 1.1, width: 8 });
     this.fx.addShake(1.4);
     this.fx.addFlash(0.6, '255,240,200');
     this.sfx.play('victory');
+  }
+
+  /** Tallies a finished run into the saved record. */
+  recordResult(won) {
+    if (!this.keepRecords) return;
+    const p = this.prefs;
+    p.runs = (p.runs ?? 0) + 1;
+    if (won) {
+      p.wins = (p.wins ?? 0) + 1;
+      if (!(p.fastestWin <= this.time)) p.fastestWin = this.time;
+    }
+    savePrefs(p);
   }
 
   // ------------------------------------------------------------ progression
@@ -1904,7 +2037,7 @@ export class Game {
       this.fx.burst(this.hero.x, this.hero.y, '#fff0b8', 50, 300);
       this.fx.addShake(1);
       this.fx.addFlash(0.35, '255,240,190');
-      this.sfx.play('evolve');
+      this.sfx.play('heroEvolve');
     }
 
     // Ascension timer at the final stage.
@@ -1912,6 +2045,7 @@ export class Game {
       this.ascension += dt;
       if (this.ascension >= CONFIG.ascensionTime) {
         this.phase = 'defeat';
+        this.recordResult(false);
         this.endReason = 'The champion completed its ascension. The swarm is scattered.';
         this.fx.addFlash(0.7, '255,240,200');
         this.sfx.play('defeat');
@@ -1943,7 +2077,7 @@ export class Game {
     const out = [];
     const copy = [...pool];
     while (out.length < 3 && copy.length) {
-      const idx = Math.floor(Math.random() * copy.length);
+      const idx = Math.floor(random() * copy.length);
       out.push(copy.splice(idx, 1)[0]);
     }
     return out;
@@ -1962,7 +2096,9 @@ export class Game {
   // ------------------------------------------------------------ player verbs
 
   tryFrenzy() {
-    if (this.frenzyCooldown > 0) return;
+    // Both Space and the button route here, so a run halted by the pause
+    // screen or the open guide cannot spend it.
+    if (this.phase !== 'playing' || this.helpVisible || this.frenzyCooldown > 0) return;
     this.frenzyTimer = CONFIG.frenzyDuration + this.mods.frenzyDurationBonus;
     this.frenzyCooldown = CONFIG.frenzyCooldown * this.mods.frenzyCooldownMult;
     this.rally = null; // Frenzy releases the staged swarm...
@@ -1981,19 +2117,75 @@ export class Game {
       this.trySummon(this.selected, w);
     }
     for (const click of this.rightClicks) {
-      const w = this.screenToWorld(click.x, click.y);
-      if (!this.world.inArena(w, 10)) continue;
-      this.rally = { x: w.x, y: w.y };
-      this.fx.ring(w.x, w.y, 60, 'rgba(200,120,255,0.8)', { life: 0.5 });
-      this.log('Rally beacon set — swarm will gather (Q to clear)', PALETTE.swarmGlow);
+      this.setRally(this.screenToWorld(click.x, click.y));
+    }
+  }
+
+  setRally(w) {
+    if (!this.world.inArena(w, 10)) return;
+    this.rally = { x: w.x, y: w.y };
+    this.sfx.play('rally');
+    this.fx.ring(w.x, w.y, 60, 'rgba(200,120,255,0.8)', { life: 0.5 });
+    this.log('Rally beacon set — swarm will gather (Q to clear)', PALETTE.swarmGlow);
+  }
+
+  // ------------------------------------------------------------------- audio
+
+  /**
+   * A sound from a world position: panned by where it lands on screen, and
+   * quieter the further off-screen it happened, so a fight the camera is not
+   * on does not sound like one under the cursor. `fade: false` keeps full
+   * volume for things the player must hear wherever they are looking.
+   */
+  sfxAt(name, p, { fade = true } = {}) {
+    const s = this.worldToScreen(p.x, p.y);
+    const pan = clamp((s.x - this.width / 2) / (this.width / 2), -1, 1) * 0.6;
+    const off = Math.hypot(Math.max(0, -s.x, s.x - this.width), Math.max(0, -s.y, s.y - this.height));
+    const gain = fade ? clamp(1 - off / 700, 0.12, 1) : 1;
+    this.sfx.play(name, { pan, gain });
+  }
+
+  /**
+   * The ambient bed tracks how close the champion is to winning, and at the
+   * final tier a heartbeat counts the Ascension down, quickening as it runs.
+   */
+  updateAudio(dt) {
+    const last = HERO_STAGES.length - 1;
+    const ascend = this.ascensionLevel();
+    const halted = this.phase !== 'playing' || this.helpVisible;
+    this.sfx.ambience(clamp((this.hero.stage / last) * 0.7 + ascend * 0.3, 0, 1), halted);
+    if (halted || this.hero.stage < last) return;
+    this.heartbeat -= dt;
+    if (this.heartbeat <= 0) {
+      this.heartbeat = lerp(1.15, 0.42, ascend);
+      this.sfx.play('heartbeat', { gain: 0.55 + ascend * 0.45 });
     }
   }
 
   // ------------------------------------------------------------------ camera
 
-  updateCamera(dt) {
-    // Follow the hero, but lean toward the swarm's centre of mass so the
-    // player can see the formation they are actually commanding.
+  /** Free look: points the camera at `p` and restarts the recenter countdown. */
+  lookAt(p) {
+    this.camera.free = { x: p.x, y: p.y };
+    this.camera.idle = 0;
+  }
+
+  /** Hands the camera back to the champion, gliding rather than cutting. */
+  recenterCamera() {
+    if (!this.camera.free) return;
+    this.camera.free = null;
+    this.camera.settle = 0;
+  }
+
+  /** Seconds until a free camera drifts back, or null when it is not free. */
+  cameraReturnsIn() {
+    return this.camera.free ? Math.max(0, CONFIG.cameraRecenterDelay - this.camera.idle) : null;
+  }
+
+  /** The follow target: the hero, leaning toward the swarm and the beacon. */
+  followTarget() {
+    // Lean toward the swarm's centre of mass so the player can see the
+    // formation they are actually commanding.
     let tx = this.hero.x + this.hero.vx * 0.35;
     let ty = this.hero.y + this.hero.vy * 0.35;
 
@@ -2010,14 +2202,60 @@ export class Game {
       tx = lerp(tx, this.rally.x, 0.12);
       ty = lerp(ty, this.rally.y, 0.12);
     }
+    return { x: tx, y: ty };
+  }
 
+  /** Keeps a camera target far enough in that the view never leaves the world. */
+  clampCameraTarget(p) {
     const halfW = this.width / (2 * this.camera.zoom);
     const halfH = this.height / (2 * this.camera.zoom);
-    tx = clamp(tx, Math.min(halfW, this.world.width / 2), Math.max(this.world.width - halfW, this.world.width / 2));
-    ty = clamp(ty, Math.min(halfH, this.world.height / 2), Math.max(this.world.height - halfH, this.world.height / 2));
+    p.x = clamp(p.x, Math.min(halfW, this.world.width / 2), Math.max(this.world.width - halfW, this.world.width / 2));
+    p.y = clamp(p.y, Math.min(halfH, this.world.height / 2), Math.max(this.world.height - halfH, this.world.height / 2));
+    return p;
+  }
 
-    this.camera.x = damp(this.camera.x, tx, CONFIG.cameraLerp, dt);
-    this.camera.y = damp(this.camera.y, ty, CONFIG.cameraLerp, dt);
+  updateCamera(dt) {
+    const cam = this.camera;
+    // Steering is allowed wherever the player might want to look around —
+    // mid-fight or paused — but not over a modal panel or the guide.
+    const steerable = (this.phase === 'playing' || this.phase === 'paused') && !this.helpVisible;
+
+    if (steerable && this.hud.minimapDrag && this.mouse.down) {
+      this.lookAt(this.hud.minimapToWorld(this.mouse));
+    }
+    if (steerable && this.panKeys.size) {
+      let dx = 0;
+      let dy = 0;
+      for (const key of this.panKeys) { dx += PAN_KEYS[key][0]; dy += PAN_KEYS[key][1]; }
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const step = (CONFIG.cameraPanSpeed * dt) / cam.zoom;
+        const from = cam.free ?? { x: cam.x, y: cam.y };
+        this.lookAt({ x: from.x + (dx / len) * step, y: from.y + (dy / len) * step });
+      }
+    }
+
+    // A moved camera always comes home: a few seconds after the last input
+    // it returns to the champion and follows it again, in every phase —
+    // paused included, since losing focus pauses the run on its own. Steering
+    // above restarts the countdown every frame it is held.
+    if (cam.free) {
+      cam.idle += dt;
+      if (cam.idle >= CONFIG.cameraRecenterDelay) this.recenterCamera();
+    }
+
+    // Clamping the free point itself means holding a key against the edge
+    // does not bank distance the camera would later have to walk back.
+    if (cam.free) this.clampCameraTarget(cam.free);
+    const target = this.clampCameraTarget(cam.free ? { ...cam.free } : this.followTarget());
+
+    // Straight after a recenter the rate ramps up from a slow glide, so the
+    // return reads as a drift rather than a snap.
+    cam.settle += dt;
+    const rate = cam.free ? CONFIG.cameraLerp
+      : lerp(CONFIG.cameraRecenterLerp, CONFIG.cameraLerp, clamp(cam.settle / 0.8, 0, 1));
+    cam.x = damp(cam.x, target.x, rate, dt);
+    cam.y = damp(cam.y, target.y, rate, dt);
   }
 
   viewRect() {
@@ -2038,16 +2276,39 @@ export class Game {
 
   // ------------------------------------------------------------------ render
 
+  /** True when the player asked the OS for less motion. */
+  calm() {
+    return Boolean(this.motionQuery?.matches);
+  }
+
+  /** 0..1 strength of the Frenzy look: eases in, and out over its last half second. */
+  frenzyLevel() {
+    const f = this.frenzyTimer;
+    if (f <= 0) return 0;
+    const total = CONFIG.frenzyDuration + this.mods.frenzyDurationBonus;
+    return clamp(f / 0.5, 0, 1) * clamp((total - f) / 0.2, 0, 1);
+  }
+
+  /** 0..1 progress of the Ascension timer; 0 before the final tier. */
+  ascensionLevel() {
+    if (this.hero.stage < HERO_STAGES.length - 1) return 0;
+    return clamp(this.ascension / CONFIG.ascensionTime, 0, 1);
+  }
+
   render() {
     const ctx = this.ctx;
+    const calm = this.calm();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = '#0d1219';
     ctx.fillRect(0, 0, this.width, this.height);
 
     ctx.save();
-    if (this.fx.shake > 0) {
+    // Reduced motion: no screen shake at all.
+    if (this.fx.shake > 0 && !calm) {
+      // Cosmetic, so Math.random: rendering must never advance the seeded
+      // gameplay stream, or a replayed seed would depend on the frame rate.
       const s = this.fx.shake * 10;
-      ctx.translate(rand(-s, s), rand(-s, s));
+      ctx.translate((Math.random() * 2 - 1) * s, (Math.random() * 2 - 1) * s);
     }
 
     ctx.save();
@@ -2060,9 +2321,12 @@ export class Game {
     ctx.restore();
     ctx.restore();
 
-    this.renderVignette(ctx);
+    this.renderVignette(ctx, calm);
     if (this.fx.flash > 0) {
-      ctx.fillStyle = `rgba(${this.fx.flashColor},${clamp(this.fx.flash, 0, 1) * 0.55})`;
+      // Reduced motion keeps the tint that says "something big happened" but
+      // drops the full-screen strobe to a third of its strength.
+      const strength = calm ? 0.18 : 0.55;
+      ctx.fillStyle = `rgba(${this.fx.flashColor},${clamp(this.fx.flash, 0, 1) * strength})`;
       ctx.fillRect(0, 0, this.width, this.height);
     }
 
@@ -2072,6 +2336,10 @@ export class Game {
   renderWorld(ctx) {
     const view = this.viewRect();
     const lod = this.camera.zoom < 0.68 ? 0 : 1;
+    const calm = this.calm();
+    const look = { frenzy: this.frenzyLevel(), calm };
+    // At the final tier the column shows from the first second, then grows.
+    const ascend = this.hero.stage >= HERO_STAGES.length - 1 ? 0.15 + this.ascensionLevel() * 0.85 : 0;
 
     drawGround(ctx, this.world, this.groundPattern, view, this.time);
     drawArenaBorder(ctx, this.world, CONFIG.arenaPadding);
@@ -2109,6 +2377,7 @@ export class Game {
     actors.sort((a, b) => a.y - b.y);
 
     const heroStats = this.heroStats();
+    drawAscension(ctx, this.hero, heroStats, ascend, this.time, calm, 'ground');
 
     // Threat ring: keeps the champion findable under a pile of bodies and
     // shows exactly how far its attacks reach.
@@ -2124,7 +2393,7 @@ export class Game {
 
     for (const actor of actors) {
       if (actor.kind === 'unit') {
-        drawUnit(ctx, actor.ref, UNITS[actor.ref.type], this.time, lod);
+        drawUnit(ctx, actor.ref, UNITS[actor.ref.type], this.time, lod, look);
       } else if (actor.kind === 'ally') {
         drawAlly(ctx, actor.ref, ALLY, this.time);
       } else if (actor.kind === 'prop') {
@@ -2133,6 +2402,11 @@ export class Game {
         drawHero(ctx, this.hero, heroStats, this.heroClass, this.hero.stage, this.time);
       }
     }
+
+    // Over the crowd: the Ascension column, and the Shriekers' slow and mark
+    // drawn on the champion itself rather than only as HUD chips.
+    drawAscension(ctx, this.hero, heroStats, ascend, this.time, calm, 'sky');
+    drawChampionMarks(ctx, this.hero, heroStats, this.heroDebuffs(), DEBUFF_CAPS, this.time, calm);
 
     // Health bars on top of the crowd so they are never occluded.
     for (const u of this.units) {
@@ -2170,14 +2444,31 @@ export class Game {
     ctx.fillRect(x, y, w * clamp(fraction, 0, 1), h);
   }
 
-  renderVignette(ctx) {
-    const g = ctx.createRadialGradient(
-      this.width * 0.5, this.height * 0.5, Math.min(this.width, this.height) * 0.35,
-      this.width * 0.5, this.height * 0.5, Math.max(this.width, this.height) * 0.75,
-    );
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(0,0,0,0.42)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.width, this.height);
+  renderVignette(ctx, calm) {
+    const edge = (rgb, alpha) => {
+      const g = ctx.createRadialGradient(
+        this.width * 0.5, this.height * 0.5, Math.min(this.width, this.height) * 0.35,
+        this.width * 0.5, this.height * 0.5, Math.max(this.width, this.height) * 0.75,
+      );
+      g.addColorStop(0, `rgba(${rgb},0)`);
+      g.addColorStop(1, `rgba(${rgb},${alpha})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, this.width, this.height);
+    };
+    edge('0,0,0', 0.42);
+
+    // Frenzy tints the screen edge violet, and the last third of Ascension
+    // pulses it red, so both read without a glance at the HUD. Reduced
+    // motion keeps the tints and drops the pulse.
+    const frenzy = this.frenzyLevel();
+    if (frenzy > 0) {
+      const beat = calm ? 1 : 0.8 + Math.sin(this.time * 8) * 0.2;
+      edge('176,80,255', 0.3 * frenzy * beat);
+    }
+    const danger = clamp((this.ascensionLevel() - 0.66) / 0.34, 0, 1);
+    if (danger > 0) {
+      const beat = calm ? 0.8 : 0.55 + Math.sin(this.time * (4 + danger * 6)) * 0.45;
+      edge('255,60,80', 0.32 * danger * beat);
+    }
   }
 }

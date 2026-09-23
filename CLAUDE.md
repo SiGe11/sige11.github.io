@@ -76,6 +76,8 @@ Game balance is measured, not tested: paste `swarmvshero/dev/balance-harness.js`
 into the console on a running game and call `window.__suite(window.__DUMB, 80)`.
 Run-to-run variance is high enough that 80-run samples of an identical build
 have ranged from 38% to 64% — pool several hundred runs before moving a number.
+Runs are seeded (`__suite(bot, n, { seed: 1 })`), so to judge a change, run the
+same seeded batch on both builds — they then face identical maps and champions.
 
 For the rest of the site there is no committed suite. Cross-browser work has
 been done with throwaway Playwright scripts in the scratchpad against Chrome,
@@ -97,7 +99,9 @@ their own. `boot.js` feature-gates on pointer, touch, UA and viewport, and
 lazy-loads everything else — on a phone `crt.css` is never even requested.
 
 **On desktop it is the default view**, not an opt-in: the page powers up as a
-CRT. Leaving is deliberately not remembered, so a reload brings it back.
+CRT. Leaving is remembered for the rest of the tab (`sessionStorage`): links
+followed from the plain page, and Back, stay plain until the glyph switches
+it on again. A reload or a new tab starts with the tube again.
 
 ### The two views cannot drift
 
@@ -115,12 +119,18 @@ root pages share the same markup shape:
 
 Changing that structure silently changes what terminal mode renders. Adding a
 link to the page adds it to the TUI automatically; nothing in `crt/` needs
-editing.
+editing. A link to `/` (the blocker page's `← Home`) is left out of the TUI
+list, because its `..` entry already goes home. The TUI header shows the
+JSON-LD `jobTitle` when there is one, else the meta description.
 
-The exception is `about.txt`, whose bio comes from `PROFILE` in `crt/vfs.js`
-(the links under it are still read from the page). `vfs.js` also carries
-fabricated file sizes for `ls -l` — if you change a file's contents, nudge its
-listed size so `cat` and `ls` don't contradict each other.
+The exception is `about.txt`, whose bio comes from `PROFILE` in `crt/vfs.js`.
+The profile links under it come from the JSON-LD `sameAs` list — the Person on
+`index.html` and the `author` on `lightweight-blocker.html` carry the same
+list; keep the two in step.
+
+`vfs.js` also carries fabricated file sizes for `ls -l` — if you change a
+file's contents, nudge its listed size so `cat` and `ls` don't contradict each
+other.
 
 ### CRT effects run in bursts, not continuously
 
@@ -144,21 +154,37 @@ rules the page actually uses. The `!important` on the utility classes
 every image. Bootstrap itself is not a dependency and its files are not in the
 repo.
 
-Images use `<picture>` with a WebP source and a PNG/JPG fallback. Flat
-screenshots are lossless WebP and must not be resized — resampling invents
-colours and multiplies the file size; only photographic images get resized.
+Images use `<picture>` with a WebP source and a PNG/JPG fallback, wrapped in an
+`a.writeup-zoom` to the WebP: on a phone a terminal screenshot is only
+readable at full size. Flat screenshots are lossless WebP and must not be
+resized — resampling invents colours and multiplies the file size; only
+photographic images get resized.
 
 ## Conventions
 
 - **Adding a page** means updating `sitemap.xml` (with `lastmod`) and
-  `llms.txt`. `robots.txt` only points at the sitemap.
+  `llms.txt`. `robots.txt` points at the sitemap and keeps the repo's notes
+  (`CLAUDE.md`, the READMEs) out of search — the repo is served as-is.
+- **The two root pages and the write-up carry a Content-Security-Policy
+  `<meta>`** (GitHub Pages cannot send headers; `swarmvshero/` has none yet): `default-src 'self'; img-src 'self' data:` plus lockdowns. So
+  no inline `<script>`, no `on…=` attributes and no `style=` attributes in
+  markup. JSON-LD blocks are fine (never executed), and so is setting
+  `element.style` from JS. The write-up's copy buttons live in `copy.js` for
+  this reason.
+- **Social images**: the root pages' `og:image`s (`assets/og-*.png`, 1200x630)
+  are screenshots of the page in terminal mode, served as `sige25.dev` so the
+  screen shows the real domain; retake them when a page's content changes. The
+  write-up's is `images/og-card.png`, its nmap output letterboxed.
+- **Favicons**: `/assets/favicon.png` on the root pages, plus `/favicon.ico`
+  and `/apple-touch-icon.png` at the root for anything that asks by
+  convention. The write-up keeps its own inline favicon — its PNG comment is
+  part of a puzzle.
 - **`prefers-reduced-motion` is honoured everywhere** — the fade-up on the
-  business card, every CRT effect, the write-up. Keep it that way.
+  business card, every CRT effect, the write-up, the game's screen shake and
+  flashes. Keep it that way.
 - **`#26719f`** is the accent (headings, link hover, the write-up's copy
   button); it was picked for contrast and shouldn't drift.
 - **Browser targets** are Chrome, Edge, Firefox and Safari on desktop, plus
   Chrome, Firefox and Safari on mobile for the non-CRT pages. Edge is Blink, so
   Chrome covers it. The floor for terminal mode is roughly Chrome/Edge 86,
   Firefox 78, Safari 14.
-- `content/writeups/funpage/images/gobuster.png` is currently referenced by
-  nothing.

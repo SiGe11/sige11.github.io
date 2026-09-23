@@ -3,6 +3,8 @@
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Lightweight Blocker</title>
     <link rel="canonical" href="https://sige25.dev/lightweight-blocker.html"/>
     <meta name="description" content="Lightweight Blocker — A privacy aware site blocker. Links to browser extension pages for Firefox and Chrome."/>
@@ -13,8 +15,13 @@
     <meta property="og:title" content="Lightweight Blocker">
     <meta property="og:description" content="Lightweight Blocker — A privacy aware site blocker. Links to browser extension pages for Firefox and Chrome.">
     <meta property="og:url" content="https://sige25.dev/lightweight-blocker.html">
-    <meta name="twitter:card" content="summary">
-    <link href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAQAAADZc7J/AAABvklEQVRIx+3UPUhVcRgG8N+VMnBqCcwhygY3IWpoiJKWbGjIvogwagiUSxINNRQYZA5JDUUNBS0OBmapS1MfcAsKJCiXvJVEIXEhykQU7Xpuy8F7rvfovRk0+Uzvef7/87zP+8GfFfwzEjFcg2ZwydflSDaaEQgEph0vfb2iiDlqdRgFfi1HII/3BkoLrCpihsIOFGKnTl+Qwz5J3Ys7uOU6GHElwrbqVq3aek9MRFtf7OCErcZ0uVHA1nmhAbxcrAdJWWu0uWOXGldtK7iX8WE+zsU7OKgCx1QgoVK/I5Fs34w5A0adkosTSGC7DfPfNXo9kJCTddYnp3HIW2n90nHzeC7QGq7QhKdhFAgM69Ck1m1Zk5pULT1G+Gi3A9qs88Yjm23R5J16aXR4ZSpOILdApE8fdmjGhBRS4Um7e14v7aA+zHHToDl7bCo4HdcT99MzgcMmI7UHsi7gYQEXGIrfAxhwecGWbFQC+RIuShnUowXM6jESGWoZqHItYvMHRgXulioh72DKOcPqnPdYr9ly80Z7MOezGfw27X7I1Vpbbg9okfTdfnt1aXRSRqU67cZlCt7On3/TmRX8D/wBdRiUe+BTzagAAAAASUVORK5CYII=" rel="icon" type="image/x-icon"/>
+    <meta property="og:image" content="https://sige25.dev/assets/og-lightweight-blocker.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Lightweight Blocker's page in terminal mode, on a green phosphor screen">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="/assets/favicon.png" type="image/png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preload" href="/fonts/open-sans-v40-latin-regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="preload" href="/fonts/open-sans-v40-latin-700.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="stylesheet" href="css/style.css">
@@ -24,12 +31,18 @@
       "@type": "SoftwareApplication",
       "name": "Lightweight Blocker",
       "operatingSystem": "All",
-      "applicationCategory": "BrowserExtension",
+      "applicationCategory": "BrowserApplication",
       "description": "A privacy aware site blocker.",
       "url": "https://sige25.dev/lightweight-blocker.html",
       "author": {
         "@type": "Person",
-        "name": "Simon Gergely"
+        "name": "Simon Gergely",
+        "url": "https://sige25.dev/",
+        "sameAs": [
+          "https://www.linkedin.com/in/gergely-simon/",
+          "https://github.com/SiGe11",
+          "https://tryhackme.com/p/SiGe"
+        ]
       },
       "offers": {
         "@type": "Offer",
@@ -45,22 +58,11 @@
         <h1>Lightweight Blocker</h1>
         <h2>a privacy aware site blocker</h2>
         <ul>
-            <li>
-                <a href="https://addons.mozilla.org/en-US/firefox/addon/lightweight-blocker/" target="_blank" rel="noopener" onclick="setTimeout(function(){ window.location.href='index.html'; }, 50);">
-                    Firefox
-                </a>
-            </li>
-            <li>
-                <a href="https://chromewebstore.google.com/detail/gppkhppnogcgodjackcgcfoepdngfcpm?utm_source=item-share-cb" target="_blank" rel="noopener" onclick=" setTimeout(function(){ window.location.href='index.html'; }, 50);">
-                    Chrome
-                </a>
-            </li>
-            <li>
-                <a href="https://github.com/SiGe11/Lightweight-Blocker-Extension" target="_blank" rel="noopener" onclick="setTimeout(function(){ window.location.href='index.html'; }, 50);">
-                    Github
-                </a>
-            </li>
+            <li><a href="https://addons.mozilla.org/en-US/firefox/addon/lightweight-blocker/" target="_blank" rel="noopener">Firefox</a></li>
+            <li><a href="https://chromewebstore.google.com/detail/gppkhppnogcgodjackcgcfoepdngfcpm" target="_blank" rel="noopener">Chrome</a></li>
+            <li><a href="https://github.com/SiGe11/Lightweight-Blocker-Extension" target="_blank" rel="noopener">GitHub</a></li>
         </ul>
+        <p class="back"><a href="/">&larr; Home</a></p>
     </div>
 </main>
 <script type="module" src="/crt/boot.js"></script>

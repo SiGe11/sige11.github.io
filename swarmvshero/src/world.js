@@ -2,7 +2,7 @@
 // spatial grid used for terrain queries.
 
 import { CONFIG } from './config.js';
-import { clamp, rand, randInt, pick, dist, noise2, pointSegmentDist2 } from './math.js';
+import { clamp, random, rand, randInt, pick, dist, noise2, pointSegmentDist2 } from './math.js';
 
 const CELL = 160;
 
@@ -250,7 +250,7 @@ export class World {
       this.details.push({
         x,
         y,
-        kind: Math.random() < 0.62 ? 'tuft' : 'pebble',
+        kind: random() < 0.62 ? 'tuft' : 'pebble',
         size: rand(4, 11),
         seed: rand(0, 100),
         tilt: rand(-0.4, 0.4),

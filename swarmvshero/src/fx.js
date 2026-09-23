@@ -12,7 +12,6 @@ export class Fx {
     this.texts = [];
     this.rings = [];
     this.slashes = [];
-    this.beams = [];
     this.shake = 0;
     this.flash = 0;
     this.flashColor = '255,255,255';
@@ -24,7 +23,6 @@ export class Fx {
     this.texts.length = 0;
     this.rings.length = 0;
     this.slashes.length = 0;
-    this.beams.length = 0;
     this.shake = 0;
     this.flash = 0;
   }
@@ -33,12 +31,16 @@ export class Fx {
     this.shake = Math.max(0, this.shake - dt * 2.6);
     this.flash = Math.max(0, this.flash - dt * 3.4);
 
+    // Drag values are tuned per 60 Hz frame; raising them to the frame's
+    // share of that keeps a burst the same size on a 120 Hz display.
+    const frames = dt * 60;
     for (const p of this.particles) {
       p.life -= dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vx *= p.drag;
-      p.vy *= p.drag;
+      const drag = p.drag ** frames;
+      p.vx *= drag;
+      p.vy *= drag;
       p.vy += p.gravity * dt;
       if (p.spin) p.angle += p.spin * dt;
     }
@@ -49,7 +51,7 @@ export class Fx {
     for (const t of this.texts) {
       t.life -= dt;
       t.y -= t.rise * dt;
-      t.rise *= 0.94;
+      t.rise *= 0.94 ** frames;
     }
     if (this.texts.length && this.texts.some((t) => t.life <= 0)) {
       this.texts = this.texts.filter((t) => t.life > 0);
@@ -63,11 +65,6 @@ export class Fx {
     for (const s of this.slashes) s.life -= dt;
     if (this.slashes.length && this.slashes.some((s) => s.life <= 0)) {
       this.slashes = this.slashes.filter((s) => s.life > 0);
-    }
-
-    for (const b of this.beams) b.life -= dt;
-    if (this.beams.length && this.beams.some((b) => b.life <= 0)) {
-      this.beams = this.beams.filter((b) => b.life > 0);
     }
 
     for (const d of this.decals) d.life -= dt;
@@ -212,15 +209,6 @@ export class Fx {
     });
   }
 
-  beam(x1, y1, x2, y2, color, opts = {}) {
-    this.beams.push({
-      x1, y1, x2, y2, color,
-      life: opts.life ?? 0.14,
-      maxLife: opts.life ?? 0.14,
-      width: opts.width ?? 2.4,
-    });
-  }
-
   // ---------------------------------------------------------------- drawing
 
   /** Ground-level layer: decals sit under everything else. */
@@ -280,22 +268,6 @@ export class Fx {
       ctx.lineWidth = s.width * (1 - t * 0.6);
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.radius * (0.85 + t * 0.35), start, start + sweep * 0.7);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // Tracer beams (ranged shots, hero bolts).
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineCap = 'round';
-    for (const b of this.beams) {
-      const alpha = b.life / b.maxLife;
-      ctx.globalAlpha = alpha * 0.75;
-      ctx.strokeStyle = b.color;
-      ctx.lineWidth = b.width * alpha;
-      ctx.beginPath();
-      ctx.moveTo(b.x1, b.y1);
-      ctx.lineTo(b.x2, b.y2);
       ctx.stroke();
     }
     ctx.restore();

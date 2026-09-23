@@ -43,7 +43,8 @@ h1 {
     font-weight: 700;
 }
 
-h2 {
+h2,
+.subtitle {
     font-size: 1.25rem;
     margin-top: 0;
     margin-bottom: 1rem;
@@ -64,11 +65,21 @@ li {
 a {
     color: #34495e;
     text-decoration: none;
-    font-weight: 500;
 }
 
 a:hover {
     color: #26719f;
+}
+
+/* Its own rule: a browser without :focus-visible would drop :hover too. */
+a:focus-visible {
+    color: #26719f;
+}
+
+/* The way back from a sub-page, under its list of links. */
+.back {
+    margin: 1.5rem 0 0;
+    font-size: 0.875rem;
 }
 
 @keyframes fadeInUp {

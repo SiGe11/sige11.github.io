@@ -6,7 +6,7 @@ import { segments, pad, setEllipsis } from './text.js';
 import { buildVfs } from './vfs.js';
 import { createPageView } from './pageview.js';
 import { createShell } from './shell.js';
-import { markBooted } from './mode.js';
+import { markBooted, markLeft } from './mode.js';
 
 /* φωσφόρος — light-bearer. What a green screen is, literally. */
 const SYSTEM = 'PhosphorOs';
@@ -20,11 +20,18 @@ const GLYPH_SAMPLE = '┌┐└┘─│…';
 /* Tube bulge. 0 disables it; above ~0.03 it reads as a trapezoid. */
 const CURVE = 0.011;
 
+/* Option is how a Mac types ~ | \ @ { } on most non-US layouts. */
+const MAC = /Mac/i.test(navigator.platform || navigator.userAgent);
+
+/* The command line's hidden field is what the browser pastes into and
+   composes accented / IME text in; keystrokes themselves never reach it. */
 const MARKUP = `
 <button type="button" class="crt__exit">Leave terminal mode</button>
 <p class="crt__intro" id="crt-intro">Terminal mode: the page drawn as a text
 console. Arrow keys move between links, Enter opens one, q drops to a command
 prompt, Escape leaves terminal mode and shows the standard page.</p>
+<textarea class="crt__input" tabindex="-1" aria-label="Command line" rows="1"
+          autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 <div class="crt__screen">
   <div class="crt__jitter">
     <div class="crt__hold">
@@ -58,6 +65,15 @@ let instance = null;
 const reducedMotion = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** A character typed with AltGr (Windows reports it as Ctrl+Alt) or with
+    Option on a Mac is text, not a shortcut. Plain Alt+letter on Windows and
+    Linux stays a browser shortcut (Alt+D, Alt+F). */
+function typedWithModifier(event) {
+    if (event.key.length !== 1 || event.metaKey) return false;
+    if (typeof event.getModifierState === 'function' && event.getModifierState('AltGraph')) return true;
+    return MAC && event.altKey && !event.ctrlKey;
+}
+
 /* Screen */
 function createScreen() {
     const root = document.createElement('div');
@@ -69,6 +85,7 @@ function createScreen() {
     root.innerHTML = MARKUP;
 
     const buffer = root.querySelector('.crt__buffer');
+    const field = root.querySelector('.crt__input');
 
     let cols = 80;
     let rows = 24;
@@ -111,9 +128,18 @@ function createScreen() {
         screen.rows = rows;
     }
 
+    /** Move focus to `el` — unless the visitor put it on the exit button,
+        which a redraw must not snatch away. */
+    function claimFocus(el) {
+        const active = document.activeElement;
+        if (active && active !== el && active.classList && active.classList.contains('crt__exit')) return;
+        el.focus({ preventScroll: true });
+    }
+
     function render(lines) {
         const frag = document.createDocumentFragment();
         const limit = Math.min(lines.length, rows);
+        let focusTarget = null;
         for (let i = 0; i < limit; i++) {
             const row = document.createElement('div');
             let used = 0;
@@ -133,8 +159,14 @@ function createScreen() {
                         node.rel = 'noopener noreferrer';
                     }
                 }
-                if (seg.c) node.className = seg.c;
+                // A screen reader should hear the link's name, not its
+                // dotted leader.
+                if (seg.label) node.setAttribute('aria-label', seg.label);
+                if (seg.action) node.dataset.action = seg.action;
+                const classes = [seg.c, seg.action && 'crt-action'].filter(Boolean).join(' ');
+                if (classes) node.className = classes;
                 if (seg.index != null) node.dataset.index = String(seg.index);
+                if (seg.focus) focusTarget = node;
                 node.textContent = text;
                 row.appendChild(node);
             }
@@ -156,6 +188,12 @@ function createScreen() {
             buffer.textContent = '';
             buffer.appendChild(frag);
         }
+
+        // Real focus follows the selection, so assistive tech announces
+        // it. A redraw that removed the focused link must not leave focus
+        // stranded on <body> either.
+        if (focusTarget) claimFocus(focusTarget);
+        else if (!root.contains(document.activeElement)) root.focus({ preventScroll: true });
     }
 
     function draw() {
@@ -173,22 +211,70 @@ function createScreen() {
     }
 
     // input
+    function focusField() {
+        field.focus({ preventScroll: true });
+    }
+
     function onKeyDown(event) {
         if (closing) return;
         // The exit control is a plain button: let the browser drive it.
         if (event.target && event.target.closest && event.target.closest('.crt__exit')) return;
-        if (event.metaKey || event.altKey) return;           // leave browser shortcuts alone
-        if (event.ctrlKey && !'lLcCuUaAeEkK'.includes(event.key)) return;
+        // Mid-composition (a dead key, an IME): the hidden field takes it.
+        if (event.isComposing || event.keyCode === 229) return;
 
-        if (view && view.key && view.key(event)) {
+        // Paste lands wherever focus is when the keystroke finishes, and
+        // Safari only pastes into something editable.
+        const paste = (event.metaKey || event.ctrlKey) && (event.key === 'v' || event.key === 'V');
+        if (paste && view && view.paste) focusField();
+
+        const typed = typedWithModifier(event);
+        if (!typed) {
+            if (event.metaKey || event.altKey) return;       // leave browser shortcuts alone
+            if (event.ctrlKey && !'lLcCuUaAeEkK'.includes(event.key)) return;
+        }
+
+        // What the views see: AltGr's phantom Ctrl taken off.
+        const input = { key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey && !typed };
+        if (view && view.key && view.key(input)) {
             event.preventDefault();
             event.stopPropagation();
         }
     }
 
+    function onPaste(event) {
+        if (closing || !view || !view.paste) return;
+        event.preventDefault();
+        const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
+        if (text) view.paste(text);
+    }
+
+    /* Text composed in the hidden field (é from a dead key, IME input) is
+       handed to the view once composition ends, then the field is emptied. */
+    let composing = false;
+    function flushField() {
+        if (composing) return;
+        const text = field.value;
+        field.value = '';
+        if (text && !closing && view && view.paste) view.paste(text);
+    }
+
     function onPointerOver(event) {
         const target = event.target.closest('[data-index]');
         if (target && view && view.hover) view.hover(Number(target.dataset.index));
+    }
+
+    /* Clickable bits of text that are not links: the status line's ESC. */
+    function onClick(event) {
+        const target = event.target.closest('[data-action]');
+        if (target && target.dataset.action === 'close') screen.close();
+    }
+
+    /* A click in the console lands focus on the screen; hand it back to
+       the command line, unless it was the end of a selection to copy. */
+    function onMouseUp() {
+        if (!view || !view.paste) return;
+        const selection = window.getSelection && window.getSelection();
+        if (!selection || selection.isCollapsed) focusField();
     }
 
     function onWheel(event) {
@@ -301,7 +387,13 @@ function createScreen() {
         root.querySelector('.crt__exit')
             .addEventListener('click', () => screen.close());
         document.addEventListener('keydown', onKeyDown, true);
+        document.addEventListener('paste', onPaste, true);
+        field.addEventListener('compositionstart', () => { composing = true; });
+        field.addEventListener('compositionend', () => { composing = false; flushField(); });
+        field.addEventListener('input', flushField);
         buffer.addEventListener('mouseover', onPointerOver);
+        buffer.addEventListener('click', onClick);
+        root.addEventListener('mouseup', onMouseUp);
         root.addEventListener('mousemove', onMouseMove);
         root.addEventListener('wheel', onWheel, { passive: true });
         window.addEventListener('resize', onResize);
@@ -315,8 +407,15 @@ function createScreen() {
     }
 
     function unmount() {
+        // A view may still have a timer running (the boot crawl).
+        if (view && view.leave) view.leave();
+        view = null;
+
         document.removeEventListener('keydown', onKeyDown, true);
+        document.removeEventListener('paste', onPaste, true);
         buffer.removeEventListener('mouseover', onPointerOver);
+        buffer.removeEventListener('click', onClick);
+        root.removeEventListener('mouseup', onMouseUp);
         root.removeEventListener('mousemove', onMouseMove);
         root.removeEventListener('wheel', onWheel);
         window.removeEventListener('resize', onResize);
@@ -344,6 +443,7 @@ function createScreen() {
         render,
         redraw: draw,
         setView,
+        focusField,
 
         /** Fill a line to the full width of the screen. */
         pad: (line) => pad(line, screen.cols),
@@ -360,11 +460,15 @@ function createScreen() {
             window.location.href = href;   // the default carries it across
         },
 
-        /** Power the tube back down and hand the visitor the normal site. */
-        close() {
+        /** Power the tube back down and hand the visitor the normal site.
+            `instant` skips the power-off, for a page restored from the
+            back/forward cache after the visitor left terminal mode elsewhere. */
+        close(options = {}) {
             if (closing) return;
             closing = true;
-            // Not remembered: the next page load starts the tube again.
+            // Honoured for the rest of the tab: links followed from the
+            // plain page stay plain (boot.js reads it).
+            markLeft(true);
 
             const finish = () => {
                 unmount();
@@ -373,7 +477,9 @@ function createScreen() {
                 if (trigger) trigger.focus({ preventScroll: true });
             };
 
-            if (reducedMotion()) {
+            if (options.instant) {
+                finish();
+            } else if (reducedMotion()) {
                 root.classList.remove('is-on');
                 setTimeout(finish, 220);
             } else {
@@ -428,8 +534,18 @@ function createBootView(screen, done) {
         draw() {
             screen.render(lines.slice(0, shown).map((l) => screen.pad(l)));
         },
-        key() { finish(); return true; },
+        key(input) {
+            // Escape leaves, as it does everywhere else; any other key skips.
+            if (input.key === 'Escape') screen.close();
+            else finish();
+            return true;
+        },
     };
+}
+
+/** Leave terminal mode from outside — see the pageshow handler in boot.js. */
+export function close(options) {
+    if (instance) instance.close(options);
 }
 
 /* Entry point */
@@ -443,12 +559,23 @@ export function open(options = {}) {
 
     const instant = options.instant === true || reducedMotion();
     markBooted();
+    markLeft(false);                   // switched on again: links stay in it
 
     // Flush layout so the animation starts at its first keyframe. Not rAF:
     // it never fires in a hidden tab, leaving the screen mounted and invisible.
     void screen.root.offsetWidth;
     screen.root.classList.add('is-on');
-    if (!instant) screen.root.classList.add('is-powering-on');
+    if (!instant) {
+        screen.root.classList.add('is-powering-on');
+        // The vertical hold is the last of the power-on animations to
+        // settle. Drop the class then, or the fill leaves a filter on the
+        // whole screen for as long as it is open.
+        screen.root.addEventListener('animationend', function settled(event) {
+            if (event.animationName !== 'crt-hold') return;
+            screen.root.classList.remove('is-powering-on');
+            screen.root.removeEventListener('animationend', settled);
+        });
+    }
 
     if (instant) screen.showPage();
     else screen.setView(createBootView(screen, () => screen.showPage()));

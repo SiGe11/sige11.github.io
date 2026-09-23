@@ -12,6 +12,13 @@ function readJsonLd() {
     return {};
 }
 
+/** The person behind the page: the Person block itself, or its author. */
+function personOf(meta) {
+    if (meta['@type'] === 'Person') return meta;
+    if (meta.author && meta.author['@type'] === 'Person') return meta.author;
+    return null;
+}
+
 function isExternal(anchor) {
     try {
         return new URL(anchor.getAttribute('href'), location.href).origin !== location.origin;
@@ -32,13 +39,24 @@ export function prettyUrl(href) {
     }
 }
 
+/** Short name of a site, as a terminal would print it: "github". */
+export function siteName(href) {
+    try {
+        return new URL(href, location.href).hostname.replace(/^www\./, '').split('.')[0];
+    } catch (_) {
+        return href;
+    }
+}
+
 /**
  * @returns {{title:string, subtitle:string, role:string, description:string,
- *            links:Array<{label:string, href:string, external:boolean}>}}
+ *            links:Array<{label:string, href:string, external:boolean}>,
+ *            profiles:string[]}}
  */
 export function readPage() {
     const block = document.querySelector('.info-block') || document.body;
     const meta = readJsonLd();
+    const person = personOf(meta);
 
     const text = (el) => (el ? el.textContent.trim().replace(/\s+/g, ' ') : '');
     const description =
@@ -62,5 +80,8 @@ export function readPage() {
         role: meta.jobTitle || '',
         description,
         links,
+        // The person's profiles elsewhere, from the JSON-LD `sameAs` — the
+        // same on every page, unlike the links a page happens to carry.
+        profiles: person ? [].concat(person.sameAs || []).filter((u) => typeof u === 'string') : [],
     };
 }

@@ -10,6 +10,11 @@ export const CONFIG = {
   zoomMin: 0.6,
   zoomMax: 1.45,
   zoomDefault: 0.95,
+  // Free look: WASD / arrows / minimap move the camera off the champion, and
+  // it glides back on its own once the player stops steering it.
+  cameraPanSpeed: 820, // screen px per second
+  cameraRecenterDelay: 3, // seconds of no camera input before it returns
+  cameraRecenterLerp: 2.6, // gentler than cameraLerp, so the return reads as a glide
 
   // Economy
   startAether: 60,
@@ -57,7 +62,7 @@ export const CONFIG = {
   // Battlefield drops. Killing a unit occasionally leaves something behind
   // that the champion can walk over, so trading bodies has a second cost.
   dropChance: 0.06,           // per unit death
-  dropPermanentShare: 0.6,    // of those drops, this share are permanent relics
+  dropPermanentShare: 0.6,    // of those drops, this share are permanent relics (the majority)
   maxRelicsPerRun: 9,         // hard cap on permanent relics
   maxDropsOnField: 5,
   dropLifetime: 13,
@@ -271,7 +276,7 @@ export const UNITS = {
     xpValue: 66,
     behavior: 'artillery',
     projectileSpeed: 250,
-    splashRadius: 90, // the only swarm attack that can clear the champion's wisps
+    splashRadius: 90, // one shell can clear a whole pack of the champion's wisps
     kiteRange: 250,
     summonCooldown: 26,
     unlockAt: 105,
@@ -499,9 +504,10 @@ export const HERO_RELICS = [
 ];
 
 /**
- * Short-lived pickups. These are the common drop: loud, dangerous for a few
- * seconds, and gone again. Nothing here touches max HP — a temporary hpMult
- * would strand the champion above its own cap when it expired.
+ * Short-lived pickups. These are the minority drop (see dropPermanentShare):
+ * loud, dangerous for a few seconds, and gone again. Nothing here touches max
+ * HP — a temporary hpMult would strand the champion above its own cap when it
+ * expired.
  */
 export const HERO_BOONS = [
   {
@@ -590,7 +596,7 @@ export const SWARM_UPGRADES = [
   {
     id: 'link',
     name: 'Swarm Link',
-    desc: '+7% damage per nearby ally (max +42%)',
+    desc: '+7% damage per nearby ally, counting up to 6',
     apply: (m) => { m.linkBonus += 0.07; },
   },
   {
