@@ -263,10 +263,13 @@ function createScreen() {
         if (target && view && view.hover) view.hover(Number(target.dataset.index));
     }
 
-    /* Clickable bits of text that are not links: the status line's ESC. */
+    /* Clickable bits of text that are not links: the status line's hints.
+       ESC is the screen's own; the rest belong to the view that drew them. */
     function onClick(event) {
         const target = event.target.closest('[data-action]');
-        if (target && target.dataset.action === 'close') screen.close();
+        if (!target) return;
+        if (target.dataset.action === 'close') screen.close();
+        else if (view && view.action) view.action(target.dataset.action);
     }
 
     /* A click in the console lands focus on the screen; hand it back to

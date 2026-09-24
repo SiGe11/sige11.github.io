@@ -38,6 +38,16 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+/**
+ * The site's privacy notice, linked from the field guide header. A full
+ * address, never a path: the game also ships to other hosts (itch.io), where a
+ * relative link would lead nowhere — and where the text itself has to say
+ * where to go if the click cannot open a tab.
+ */
+export const PRIVACY_URL = 'https://sige25.dev/privacy.html';
+const PRIVACY_LABEL = `Privacy: ${PRIVACY_URL}`;
+const HELP_CLOSE = 'H or Esc to close';
+
 export const HELP_PAGES = [
   {
     title: 'Basics',
@@ -453,6 +463,24 @@ export class Hud {
     const w = Math.min(860, g.width - 48);
     const h = Math.min(560, g.height - 48);
     return { x: (g.width - w) / 2, y: (g.height - h) / 2, w, h };
+  }
+
+  /**
+   * The privacy link: on the header line, left of the close hint, or on a line
+   * of its own under it when the panel is too narrow to hold both beside the
+   * title. `baseline` is where its text sits.
+   */
+  privacyLinkRect() {
+    const g = this.game;
+    const panel = this.helpPanelRect();
+    const w = this.measure(g.ctx, PRIVACY_LABEL, { size: 12 });
+    const closeW = this.measure(g.ctx, HELP_CLOSE, { size: 12 });
+    const titleRight = panel.x + 24 + this.measure(g.ctx, 'Field Guide', { size: 24, weight: 800 });
+    const right = panel.x + panel.w - 24;
+
+    const beside = right - closeW - 28 - w;
+    if (beside >= titleRight + 24) return { x: beside, y: panel.y + 22, w, h: 20, baseline: panel.y + 36 };
+    return { x: right - w, y: panel.y + 39, w, h: 18, baseline: panel.y + 52 };
   }
 
   helpTabRects() {
@@ -1421,9 +1449,21 @@ export class Hud {
     this.text(ctx, 'Field Guide', panel.x + 24, panel.y + 38, {
       size: 24, weight: 800, color: '#e8ccff',
     });
-    this.text(ctx, 'H or Esc to close', panel.x + panel.w - 24, panel.y + 36, {
+    this.text(ctx, HELP_CLOSE, panel.x + panel.w - 24, panel.y + 36, {
       size: 12, align: 'right', color: PALETTE.uiDim,
     });
+
+    // Opened by a click listener in game.js, not here: see bindInput().
+    const link = this.privacyLinkRect();
+    const linkHovered = this.hit(link, g.mouse);
+    const linkColor = linkHovered ? '#e8ccff' : PALETTE.uiDim;
+    this.text(ctx, PRIVACY_LABEL, link.x, link.baseline, { size: 12, color: linkColor });
+    if (linkHovered) {
+      ctx.save();
+      ctx.fillStyle = linkColor;
+      ctx.fillRect(link.x, link.baseline + 2, link.w, 1);
+      ctx.restore();
+    }
 
     for (const tab of this.helpTabRects()) {
       const active = tab.page === this.helpPage;

@@ -14,7 +14,7 @@ const MIN_HEIGHT = 480;
 
 /* Everything crt.js pulls in, fetched side by side instead of one import
    after another. A new module under crt/ belongs on this list too. */
-const MODULES = ['crt.js', 'text.js', 'vfs.js', 'pageview.js', 'shell.js', 'page.js'];
+const MODULES = ['crt.js', 'text.js', 'vfs.js', 'pageview.js', 'shell.js', 'page.js', 'notice.js'];
 
 /** Keyboard-driven and pointer-hungry: phone-shaped or touch-first is out. */
 function isEligible() {

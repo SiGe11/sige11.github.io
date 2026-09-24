@@ -1,0 +1,34 @@
+/* A page of running text. Same frame as the business card (fade-in, colours,
+   font from style.css), without its 300px column. */
+
+.info-block.legal {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 40rem;
+    padding: 0 1rem 3rem;
+    line-height: 1.6;
+}
+
+.legal h2 {
+    margin-top: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.legal p {
+    margin: 0 0 0.75rem;
+}
+
+.legal a {
+    text-decoration: underline;
+}
+
+.legal code {
+    font-family: monospace;
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+
+.legal .updated {
+    margin-top: 2rem;
+    font-size: 0.875rem;
+}

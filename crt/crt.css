@@ -363,8 +363,19 @@
 /* Focus follows the selection, and inverse video already shows it. */
 .crt a:focus { outline: none; }
 
-/* The status line's ESC hint is also the way out for the mouse: a faint
-   box on hover says it can be clicked. Outline, so the grid never moves. */
+/* A link inside running text (the privacy notice), where no inverse-video
+   row marks it out. */
+.crt .crt-link {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.crt .crt-link:hover {
+    color: var(--crt-bright);
+}
+
+/* The status line's clickable hints (ESC, :p, Q back) are also the mouse's
+   way around: a faint box on hover says so. Outline, so the grid never moves. */
 .crt .crt-action { border-radius: 2px; }
 
 .crt .crt-action:hover {

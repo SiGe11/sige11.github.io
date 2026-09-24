@@ -20,7 +20,7 @@ import {
   drawUnit, drawHero, drawRift, drawTelegraph, drawRally, drawProjectile,
   drawRelic, drawAlly, drawChampionMarks, drawAscension,
 } from './art.js';
-import { Hud } from './hud.js';
+import { Hud, PRIVACY_URL } from './hud.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 
 const TAU = Math.PI * 2;
@@ -259,6 +259,16 @@ export class Game {
         this.mouse.down = false;
         this.hud.minimapDrag = false;
       }
+    });
+
+    // The field guide's privacy link opens here, inside the click itself.
+    // Queued for the loop like other clicks, it would open a frame later,
+    // where a popup blocker may no longer count it as the player's doing.
+    canvas.addEventListener('click', (e) => {
+      if (!this.helpVisible) return;
+      const r = canvas.getBoundingClientRect();
+      const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+      if (this.hud.hit(this.hud.privacyLinkRect(), p)) window.open(PRIVACY_URL, '_blank', 'noopener');
     });
 
     canvas.addEventListener('wheel', (e) => {

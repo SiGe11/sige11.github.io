@@ -11,3 +11,4 @@
 - [Lightweight Blocker](https://sige25.dev/lightweight-blocker.html): Lightweight Blocker — A privacy aware site blocker. Links to browser extension pages for Firefox and Chrome, and the source on GitHub
 - [Swarm vs Hero](https://sige25.dev/swarmvshero/): Swarm vs Hero — command an evolving swarm against a lone champion that grows stronger with every unit it kills
 - [Funpage Write-Up](https://sige25.dev/content/writeups/funpage/): Funpage, TryHackMe room write-up by Simon Gergely
+- [Privacy and licences](https://sige25.dev/privacy.html): What the site stores on a visitor's device, who hosts it, and the licences of the code and fonts it carries

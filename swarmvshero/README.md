@@ -79,7 +79,13 @@ composition:
 
 Best played fullscreen — a wider view means you see the champion coming sooner.
 The run pauses itself if the window loses focus, and the mute switch and a
-small win record are remembered between visits. Screen shake and full-screen
+small win record are remembered between visits. What is stored, and where, is
+in the privacy notice linked from the field guide's header. That link is the
+full address, `https://sige25.dev/privacy.html` (`PRIVACY_URL` in
+`src/hud.js`), because the game is also hosted elsewhere (itch.io). Keep it
+absolute. It opens from a click listener in `bindInput()`, not from the
+queued clicks the loop handles a frame later, where a popup blocker may refuse
+it. Screen shake and full-screen
 flashes follow the operating system's reduced-motion setting: shake goes, and
 flashes drop to a soft tint.
 

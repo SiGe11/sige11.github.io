@@ -1,3 +1,9 @@
+/*! The grid and spacing rules from .container down to .p-4, and
+    .visually-hidden further on, are adapted from Bootstrap
+    (https://getbootstrap.com), which is not otherwise part of this site.
+    Copyright (c) 2011-2026 The Bootstrap Authors
+    Licensed under the MIT License; the full text is /licenses/bootstrap.txt */
+
 .container {
     width: 100%;
     padding-right: 12px;
@@ -125,6 +131,14 @@ a {
     clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
+}
+
+/* A long page: fixed, the privacy link would sit on the text while it
+   scrolls. Here it closes the page instead, still bottom right. */
+.site-foot {
+    position: static;
+    padding: 0 1rem 0.75rem;
+    text-align: right;
 }
 
 .writeup-card {

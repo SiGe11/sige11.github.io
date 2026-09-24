@@ -15,6 +15,7 @@ Four independent pieces share the repo:
 | | |
 |---|---|
 | `index.html`, `lightweight-blocker.html` | the business card. `css/style.css`, shared markup shape. |
+| `privacy.html` | privacy notice and licences. `css/style.css` + `css/legal.css`; terminal mode prints it too. |
 | `crt/` | terminal mode — a CRT/TUI overlay for the two pages above. |
 | `content/writeups/funpage/` | a TryHackMe write-up. Self-contained, own CSS. |
 | `swarmvshero/` | a canvas game. Self-contained, own README, own tests. |
@@ -119,7 +120,10 @@ root pages share the same markup shape:
 
 Changing that structure silently changes what terminal mode renders. Adding a
 link to the page adds it to the TUI automatically; nothing in `crt/` needs
-editing. A link to `/` (the blocker page's `← Home`) is left out of the TUI
+editing. The flip side: **a link that must not be a menu entry goes outside
+`.info-block`** — the privacy link lives in `<footer class="site-foot">` after
+`</main>` for that reason (inside, it became an entry leading to a page with
+no terminal mode). A link to `/` (the blocker page's `← Home`) is left out of the TUI
 list, because its `..` entry already goes home. The TUI header shows the
 JSON-LD `jobTitle` when there is one, else the meta description.
 
@@ -131,6 +135,12 @@ list; keep the two in step.
 `vfs.js` also carries fabricated file sizes for `ls -l` — if you change a
 file's contents, nudge its listed size so `cat` and `ls` don't contradict each
 other.
+
+The privacy notice follows the same rule: `crt/notice.js` fetches
+`/privacy.html` and reads its `.legal` block for `:p` (page view) and
+`privacynotice` (console, a `less`-style pager), so there is one text to edit. Its structure —
+`h1` + `.subtitle`, `h2`, `p`, `ul`, `.updated`, `.back` — is what the
+terminal understands; see "Constraints" in `crt/README.md`.
 
 ### CRT effects run in bursts, not continuously
 
@@ -165,8 +175,15 @@ photographic images get resized.
 - **Adding a page** means updating `sitemap.xml` (with `lastmod`) and
   `llms.txt`. `robots.txt` points at the sitemap and keeps the repo's notes
   (`CLAUDE.md`, the READMEs) out of search — the repo is served as-is.
-- **The two root pages and the write-up carry a Content-Security-Policy
-  `<meta>`** (GitHub Pages cannot send headers; `swarmvshero/` has none yet): `default-src 'self'; img-src 'self' data:` plus lockdowns. So
+- **The privacy notice lists every storage key and every third-party asset.**
+  Adding a `localStorage`/`sessionStorage` key, a cookie, a font or borrowed
+  code means updating `privacy.html` (and the licence table in `README.md`);
+  borrowed code also gets its notice in the file and its text in `licenses/`.
+  The game links to the notice from its field guide by full URL
+  (`PRIVACY_URL` in `swarmvshero/src/hud.js`), because it is also hosted
+  away from this site; keep it absolute.
+- **The two root pages, the privacy page and the write-up carry a
+  Content-Security-Policy `<meta>`** (GitHub Pages cannot send headers; `swarmvshero/` has none yet): `default-src 'self'; img-src 'self' data:` plus lockdowns. So
   no inline `<script>`, no `on…=` attributes and no `style=` attributes in
   markup. JSON-LD blocks are fine (never executed), and so is setting
   `element.style` from JS. The write-up's copy buttons live in `copy.js` for

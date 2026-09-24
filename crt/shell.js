@@ -3,6 +3,7 @@
    up here for free (listing, cat, completion). */
 
 import { clip } from './text.js';
+import { loadNotice, noticeLines, pagerDelta, NOTICE_PATH } from './notice.js';
 
 const CWD = '~';
 
@@ -15,6 +16,7 @@ export function createShell(screen, options = {}) {
     let input = '';
     let caret = 0;
     let scroll = 0;            // lines scrolled back from the bottom
+    let pager = null;          // privacynotice's less, while it is up: { blocks, top, max }
 
     // output
     const print = (...lines) => {
@@ -127,6 +129,20 @@ export function createShell(screen, options = {}) {
 
         clear: () => { output.length = 0; },
 
+        // Opens in a pager, as `less` would: arrows and Space scroll, q
+        // quits back to this prompt. Read from /privacy.html on first use,
+        // so it opens a moment after the command.
+        privacynotice: () => {
+            loadNotice().then((blocks) => {
+                pager = { blocks, top: 0, max: 0 };
+            }, () => {
+                print(
+                    { t: `privacynotice: cannot read ${NOTICE_PATH}`, c: 'crt-warn' },
+                    { t: `Open ${new URL(NOTICE_PATH, location.href).href} in the browser instead.`, c: 'crt-dim' },
+                );
+            }).then(() => screen.redraw());
+        },
+
         date: () => print(new Date().toString()),
         uname: () => print(`${screen.system} 2.5 viridis i386`),
 
@@ -148,6 +164,7 @@ export function createShell(screen, options = {}) {
         ['cat <file>', 'print a text file'],
         ['echo <file|text>', 'print a text file, or the text you typed'],
         ['./<file>', 'run an executable — also run, exec, sh'],
+        ['privacynotice', 'read the privacy notice, as less — q quits'],
         ['date', 'print the date and time'],
         ['uname', 'print the system name and build'],
         ['clear', 'wipe the screen — also cls, Ctrl+L'],
@@ -223,6 +240,7 @@ export function createShell(screen, options = {}) {
     /** Pasted (or composed) text goes in at the caret. One line only:
         a newline in the clipboard must not run anything. */
     function paste(text) {
+        if (pager) return;               // nothing to paste into in a pager
         const line = String(text).split(/\r?\n/).find((l) => l.trim()) || '';
         const clean = line.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 200);
         if (!clean) return;
@@ -253,6 +271,8 @@ export function createShell(screen, options = {}) {
     }
 
     function draw() {
+        if (pager) { drawPager(); return; }
+
         const visible = screen.rows - 1;
         const all = output.concat([promptLine()]);
         const end = Math.max(0, all.length - scroll);
@@ -262,9 +282,58 @@ export function createShell(screen, options = {}) {
         screen.render(lines.map((l) => screen.pad(l)));
     }
 
+    /** The pager over the whole screen, less-style: the text, `~` past its
+        end, and a reverse-video prompt line that says `(END)` at the end. */
+    function drawPager() {
+        const room = screen.rows - 2;
+        const measure = Math.min(Math.max(screen.cols - 4, 30), 72);
+        const body = noticeLines(pager.blocks, measure).map((line) => ['  ', ...line]);
+
+        pager.max = Math.max(0, body.length - room);
+        pager.top = Math.min(Math.max(0, pager.top), pager.max);
+
+        const lines = body.slice(pager.top, pager.top + room);
+        while (lines.length < room) lines.push({ t: '~', c: 'crt-dim' });
+
+        const last = Math.min(body.length, pager.top + room);
+        const where = pager.top >= pager.max
+            ? ' (END) '
+            : ` ${NOTICE_PATH.slice(1)}  lines ${pager.top + 1}-${last}/${body.length}  ${Math.round((last / body.length) * 100)}% `;
+        lines.push([
+            { t: where, c: 'crt-sel' },
+            { t: '   ARROWS scroll   SPACE page   ', c: 'crt-dim' },
+            { t: 'Q quit', c: 'crt-dim', action: 'quit' },
+        ]);
+        screen.render(lines.map((l) => screen.pad(l)));
+    }
+
+    function closePager() {
+        pager = null;
+        draw();
+    }
+
+    /** less's keys; q (or Esc) goes back to the prompt as it was. */
+    function pagerKey(event) {
+        if (event.ctrlKey) return false;
+        const k = event.key;
+        if (k === 'q' || k === 'Q' || k === 'Escape') { closePager(); return true; }
+
+        const delta = pagerDelta(event, Math.max(1, screen.rows - 2));
+        if (delta !== null) {
+            pager.top += delta;          // clamped when drawn
+            draw();
+            return true;
+        }
+        // Other letters do nothing, as in less, and must not reach the page
+        // (/ would open Firefox's quick find). F5 and the like still pass.
+        return k.length === 1 || k === 'Tab';
+    }
+
     // input
     function key(event) {
         const k = event.key;
+
+        if (pager) return pagerKey(event);
 
         if (event.ctrlKey) {
             if (k === 'l' || k === 'L') { output.length = 0; draw(); return true; }
@@ -322,8 +391,13 @@ export function createShell(screen, options = {}) {
         key,
         paste,
         wheel(event) {
-            scroll = Math.max(0, Math.min(output.length, scroll + (event.deltaY < 0 ? 3 : -3)));
+            if (pager) pager.top += event.deltaY < 0 ? -3 : 3;
+            else scroll = Math.max(0, Math.min(output.length, scroll + (event.deltaY < 0 ? 3 : -3)));
             draw();
+        },
+        /** The pager's clickable `Q quit` (ESC is handled by crt.js). */
+        action(name) {
+            if (name === 'quit' && pager) closePager();
         },
     };
 }

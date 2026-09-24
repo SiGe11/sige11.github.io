@@ -48,10 +48,20 @@ inside the terminal does not replay the boot. Access is wrapped — reading
 | Enter, or a click | open the link |
 | `1`-`9` | jump to that entry |
 | `q` | to the console (`:q` also works) |
+| `:p`, or a click on `:p privacy` | the privacy notice, paged inside the frame |
 | Esc, or a click on `ESC escape` | leave terminal mode — also mid-crawl |
 
+In the notice, `less`'s keys (`pagerDelta()` in `notice.js`): arrows / `j` `k`
+/ Enter a line, Space / PageDown / `f` and Shift+Space / PageUp / `b` a screen,
+`d` `u` half a screen, `g` `G` `<` `>` Home End the ends, the wheel too; `q`,
+Backspace, `:q` or a click on `Q back` return to the links.
+
 **Console** — `help` lists the lot: `ls`, `dir`, `cat <file>`,
-`echo <file\|text>`, `./<file>`, `date`, `uname`, `clear`, `exit`. Tab
+`echo <file\|text>`, `./<file>`, `privacynotice`, `date`, `uname`, `clear`,
+`exit`. `privacynotice` opens the notice full-screen as `less` would: the same
+keys as above, `~` past the end, a reverse-video prompt line that reads
+`(END)` at the end, and `q` (or Esc, or a click on `Q quit`) back to the
+prompt with the console as it was. Tab
 completes as bash does (unique match, then the shared prefix, then a listing;
 dotfiles only once the word starts with `.`), up walks the history, Ctrl+L
 clears, Ctrl+C abandons the line — unless text is selected, when the browser
@@ -73,6 +83,7 @@ to the normal site), `swarm.exe`, `writeup.sh`.
 | `shell.js` | the console — commands live in `COMMANDS` |
 | `vfs.js` | the files in `~` and what running them does |
 | `page.js` | reads the document, so the two views cannot drift |
+| `notice.js` | reads `/privacy.html` and lays it out, for `:p` and `privacynotice` |
 | `text.js` | padding, wrapping, dotted leaders |
 | `crt.css` | phosphor, scanlines, jitter, flutter, power on/off |
 
@@ -138,6 +149,17 @@ Latin; everything it renders stays in English.
 * **The host pages carry a Content-Security-Policy `<meta>`**: no `style=`
   attributes in markup strings and no inline handlers. Setting `element.style`
   from JS is fine — the CSP does not cover the CSSOM.
+* **Every link in `.info-block` becomes a menu entry.** The host pages' privacy
+  link lives in a `footer.site-foot` outside it for that reason: inside, it was
+  entry 5, and it led to `privacy.html`, which has no terminal mode and no
+  glyph to bring it back.
+* **The privacy notice is `privacy.html` itself**, fetched on first use
+  (`default-src 'self'` covers the fetch) and parsed with `DOMParser`.
+  `notice.js` reads the children of `.legal`: `h1` plus `.subtitle` make the
+  title, `h2` a heading, `ul` a list, `.updated` a dim note, `.back` is
+  skipped, anything else is a paragraph. Inside them `strong` turns bright and
+  `a[href]` stays a link. Restructuring that page changes what the terminal
+  prints, so check `:p` after editing it.
 
 ## Verified
 
@@ -155,6 +177,15 @@ through `safaridriver`: Esc mid-crawl, the clickable ESC hint, focus following
 the selection, the shell (completion, paste, AltGr, composition), `about.txt`,
 a failed `crt.css`, and no CSP violations. Real Cmd+V paste works in all five.
 axe-core still finds no violations in either view on Chromium, Firefox or WebKit.
+
+After the privacy notice was added (September 2026), at 1280x800 and 800x520
+on Chromium, Firefox and WebKit (Playwright): the menus without a Privacy
+entry, `:p` by key and by click, scrolling by key and wheel, `Q back` and `:q`,
+the `privacynotice` pager (keys, wheel, `(END)`, `q` and `Q quit`) with Tab
+completion, `help`, `about.txt`, `site.sh`, Esc, and no errors in the console.
+In real Safari 26.6.2 through `safaridriver`: boot, Esc, a link followed after
+leaving (stays plain), reload and the glyph (both bring it back), and `:p` and
+the pager with real keystrokes. Not re-run with axe-core.
 
 Floor is roughly Chrome/Edge 86, Firefox 78, Safari 14 — ES modules,
 `replaceChildren` (which has a fallback) and custom properties. Older

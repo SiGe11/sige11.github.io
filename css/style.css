@@ -1,3 +1,9 @@
+/*! Open Sans, Latin subset, self-hosted as WOFF2.
+    Copyright 2020 The Open Sans Project Authors
+    (https://github.com/googlefonts/opensans)
+    Licensed under the SIL Open Font License 1.1; the full text is
+    /licenses/OFL.txt */
+
 @font-face {
     font-display: swap;
     font-family: 'Open Sans';
@@ -80,6 +86,29 @@ a:focus-visible {
 .back {
     margin: 1.5rem 0 0;
     font-size: 0.875rem;
+}
+
+/* The privacy link, as small print in the bottom-right corner (the terminal
+   glyph has the bottom-left). It sits outside .info-block on purpose:
+   terminal mode lists every link in there. The grey is the faintest that
+   still makes 4.5:1 on the page background. */
+.site-foot {
+    position: fixed;
+    right: 1rem;
+    bottom: 0.75rem;
+    font-size: 0.75rem;
+}
+
+.site-foot a {
+    color: #65717d;
+}
+
+.site-foot a:hover {
+    color: #26719f;
+}
+
+.site-foot a:focus-visible {
+    color: #26719f;
 }
 
 @keyframes fadeInUp {

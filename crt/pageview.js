@@ -6,16 +6,30 @@
    what rows are left, dropping its lowest-ranked blocks on a short screen;
    the link column is capped on a wide one.
 
-   `q` drops to the shell; `:` still opens a vi-style command line. */
+   `q` drops to the shell; `:` still opens a vi-style command line, and `:p`
+   pages through the privacy notice inside the same frame. */
 
-import { wrap, clip, spaced, leader, width } from './text.js';
+import { segments, wrap, clip, spaced, leader, width } from './text.js';
 import { readPage, prettyUrl } from './page.js';
+import { loadNotice, noticeLines, pagerDelta, NOTICE_PATH } from './notice.js';
 
-const HINT_WIDE = 'ARROWS select   ENTER open   1-9 jump   Q or :q exit';
-const HINT_NARROW = 'ARROWS  ENTER open  Q or :q exit';
-/* Its own segment, never clipped away: it is also the mouse's way out. */
+/* Status-line hints, longest first: the first that fits is shown. */
+const HINTS_LINKS = [
+    ['ARROWS select', 'ENTER open', 'BKSP back', '1-9 jump', 'Q or :q exit'],
+    ['ARROWS select', 'ENTER open', 'BKSP back', 'Q or :q exit'],
+    ['ARROWS', 'ENTER open', 'BKSP back', 'Q or :q exit'],
+];
+const HINTS_NOTICE = [
+    ['ARROWS scroll', 'SPACE page'],
+    ['ARROWS scroll'],
+];
+/* Their own segments, never clipped away: they are also the mouse's way
+   around — out of terminal mode, into the notice and back. */
 const HINT_ESC = 'ESC escape';
+const HINT_NOTICE = ':p privacy';
+const HINT_BACK = 'Q back';
 const LIST_MAX = 100;   // columns; beyond this the leaders just get silly
+const TEXT_MAX = 72;    // the notice's measure, as about.txt's
 
 /** The page's links, with a `..` entry first when this is not the site
     root — otherwise a sub-page is a one-way trip. */
@@ -50,6 +64,7 @@ export function createPageView(screen) {
     let selected = 0;
     let command = null;   // null = no command line, string = what has been typed
     let message = null;   // transient error / feedback under the frame
+    let notice = null;    // null = the links; else { blocks, failed, top, max }
 
     // helpers
     const inner = () => screen.cols - 2;
@@ -68,9 +83,9 @@ export function createPageView(screen) {
         ];
     }
 
-    function titleBar() {
+    function titleBar(where = location.href) {
         const g = glyph();
-        const label = `[ ${clip(prettyUrl(location.href), Math.max(8, screen.cols - 12))} ]`;
+        const label = `[ ${clip(prettyUrl(where), Math.max(8, screen.cols - 12))} ]`;
         const tail = Math.max(0, screen.cols - label.length - 3);
         return [{ t: `${g.tl}${g.h}${label}${g.h.repeat(tail)}${g.tr}`, c: 'crt-dim' }];
     }
@@ -142,6 +157,8 @@ export function createPageView(screen) {
 
     // drawing
     function draw() {
+        if (notice) { drawNotice(); return; }
+
         const contentRows = Math.max(4, screen.rows - 3);   // title, bottom, status
         const listWidth = Math.max(24, Math.min(inner() - 4, LIST_MAX));
 
@@ -163,16 +180,56 @@ export function createPageView(screen) {
         view.list.forEach((item, i) => rows.push(itemLine(item, view.start + i, listWidth)));
         while (rows.length < contentRows) rows.push(framed());
 
+        // Say where we are only when the list does not all fit on screen.
+        const where = view.list.length < items.length ? `${selected + 1}/${items.length}` : '';
         const lines = [
             titleBar(),
             ...rows.slice(0, contentRows),
             bottomBar(),
-            statusLine(view),
+            statusLine(where),
         ];
         screen.render(lines.map((l) => screen.pad(l)));
     }
 
-    function statusLine(view) {
+    /** The notice's text, or why there is none yet. */
+    function noticeBody(cols) {
+        if (notice.failed) {
+            return [
+                { t: `Could not read ${NOTICE_PATH}.`, c: 'crt-warn' },
+                '',
+                [
+                    { t: 'Open it in the browser: ' },
+                    { t: prettyUrl(NOTICE_PATH), c: 'crt-link', href: new URL(NOTICE_PATH, location.href).href },
+                ],
+            ];
+        }
+        if (!notice.blocks) return [{ t: `Reading ${NOTICE_PATH} …`, c: 'crt-dim' }];
+        return noticeLines(notice.blocks, cols);
+    }
+
+    /** The privacy notice in the page's frame, scrolled to `notice.top`. */
+    function drawNotice() {
+        const contentRows = Math.max(4, screen.rows - 3);
+        const measure = Math.max(24, Math.min(inner() - 6, TEXT_MAX));
+        // A blank row under the title bar, as the page's header has.
+        const body = [''].concat(noticeBody(measure));
+
+        notice.max = Math.max(0, body.length - contentRows);
+        notice.top = Math.min(Math.max(0, notice.top), notice.max);
+
+        const rows = body
+            .slice(notice.top, notice.top + contentRows)
+            .map((line) => framed([{ t: '   ' }, ...segments(line)]));
+        while (rows.length < contentRows) rows.push(framed());
+
+        const where = notice.max ? `${Math.round((notice.top / notice.max) * 100)}%` : '';
+        const lines = [titleBar(NOTICE_PATH), ...rows, bottomBar(), statusLine(where)];
+        screen.render(lines.map((l) => screen.pad(l)));
+    }
+
+    /** Hints on the left, the clickable ones after them, `where` (list
+        position or scroll percentage) on the right when there is room. */
+    function statusLine(where) {
         if (command !== null) {
             return [{ t: ':' + command }, { t: ' ', c: 'crt-cursor' }];
         }
@@ -180,20 +237,25 @@ export function createPageView(screen) {
             return [{ t: ' ' + clip(message, screen.cols - 2), c: 'crt-warn' }];
         }
 
+        const actions = notice
+            ? [{ t: HINT_BACK, c: 'crt-dim', action: 'back' }]
+            : [{ t: HINT_NOTICE, c: 'crt-dim', action: 'notice' }];
+        actions.push({ t: HINT_ESC, c: 'crt-dim', action: 'close' });
+
         const wide = screen.cols >= 72;
-        const base = wide ? HINT_WIDE : HINT_NARROW;
-        const hint = canGoBack ? base.replace('ENTER open', 'ENTER open   BKSP back') : base;
         const gap = wide ? '   ' : '  ';
-        const line = [
-            { t: ' ' + clip(hint, screen.cols - 2 - gap.length - HINT_ESC.length), c: 'crt-dim' },
-            { t: gap },
-            { t: HINT_ESC, c: 'crt-dim', action: 'close' },
-        ];
-        // Say where we are only when the list does not all fit on screen.
-        if (view && view.list.length < items.length) {
-            const count = ` ${selected + 1}/${items.length} `;
-            const gap = screen.cols - width(line) - count.length;
-            if (gap > 2) line.push({ t: ' '.repeat(gap) }, { t: count, c: 'crt-dim' });
+        const room = screen.cols - 2 - width(actions) - actions.length * gap.length;
+        const variants = (notice ? HINTS_NOTICE : HINTS_LINKS)
+            .map((parts) => parts.filter((p) => canGoBack || p !== 'BKSP back').join(gap));
+        const hint = variants.find((v) => v.length <= room) || variants[variants.length - 1];
+
+        const line = [{ t: ' ' + clip(hint, room), c: 'crt-dim' }];
+        for (const action of actions) line.push({ t: gap }, action);
+
+        if (where) {
+            const label = ` ${where} `;
+            const pad = screen.cols - width(line) - label.length;
+            if (pad > 2) line.push({ t: ' '.repeat(pad) }, { t: label, c: 'crt-dim' });
         }
         return line;
     }
@@ -212,20 +274,54 @@ export function createPageView(screen) {
         screen.navigate(item.href, { external: item.external });
     }
 
+    /** `:p` — read on the first ask, so the frame says so until it lands. */
+    function openNotice() {
+        const state = { blocks: null, failed: false, top: 0, max: 0 };
+        notice = state;
+        message = null;
+        loadNotice()
+            .then((blocks) => { state.blocks = blocks; }, () => { state.failed = true; })
+            .then(() => { if (notice === state) screen.redraw(); });
+        draw();
+    }
+
+    function closeNotice() {
+        notice = null;
+        message = null;
+        draw();
+    }
+
+    /** Clamped when drawn, so ±Infinity means top / bottom. */
+    function scrollNotice(delta) {
+        notice.top += delta;
+        message = null;
+        draw();
+        return true;
+    }
+
     function runCommand(raw) {
         const cmd = raw.trim();
         command = null;
 
+        // In the notice, quitting means back to the links, as a pager does.
         if (cmd === 'q' || cmd === 'q!' || cmd === 'quit' || cmd === 'wq' || cmd === 'x') {
-            screen.showShell();
+            if (notice) closeNotice();
+            else screen.showShell();
             return;
         }
         if (cmd === 'exit' || cmd === 'qa' || cmd === 'qa!') {
             screen.close();
             return;
         }
+        if (cmd === 'p' || cmd === 'privacy') {
+            if (notice) draw();
+            else openNotice();
+            return;
+        }
         if (cmd === 'h' || cmd === 'help') {
-            message = 'Arrow keys move, ENTER opens, q drops to the console.';
+            message = notice
+                ? 'Arrow keys and SPACE scroll, q goes back to the links.'
+                : 'Arrow keys move, ENTER opens, :p shows the privacy notice, q drops to the console.';
         } else if (cmd === '') {
             message = null;
         } else {
@@ -251,6 +347,8 @@ export function createPageView(screen) {
             if (k.length === 1)     { command += k; draw(); return true; }
             return true;
         }
+
+        if (notice) return noticeKey(event);
 
         switch (k) {
             case 'ArrowDown': case 'ArrowRight': case 'j':
@@ -286,12 +384,38 @@ export function createPageView(screen) {
         return false;
     }
 
+    /** Keys while the notice is up: less's, as the console's pager has. */
+    function noticeKey(event) {
+        const delta = pagerDelta(event, Math.max(1, screen.rows - 4));
+        if (delta !== null) return scrollNotice(delta);
+        switch (event.key) {
+            case 'q': case 'Q': case 'Backspace': case 'ArrowLeft':
+                closeNotice(); return true;
+            case ':':
+                command = ''; message = null; draw(); return true;
+            case 'Escape':
+                screen.close(); return true;
+            case 'Tab':
+                return true;   // as in the list: focus stays in the tube
+            default:
+                return false;
+        }
+    }
+
     return {
         name: 'page',
         draw,
         key,
         hover(index) {
             if (index !== selected) { selected = index; message = null; draw(); }
+        },
+        /** The status line's clickable hints (ESC is handled by crt.js). */
+        action(name) {
+            if (name === 'notice' && !notice) openNotice();
+            else if (name === 'back' && notice) closeNotice();
+        },
+        wheel(event) {
+            if (notice) scrollNotice(event.deltaY < 0 ? -3 : 3);
         },
     };
 }
