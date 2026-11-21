@@ -15,6 +15,7 @@ Four independent pieces share the repo:
 | | |
 |---|---|
 | `index.html`, `lightweight-blocker.html` | the business card. `css/style.css`, shared markup shape. |
+| `404.html` | what GitHub Pages serves for a missing address. Same shape, so terminal mode draws it too. |
 | `privacy.html` | privacy notice and licences. `css/style.css` + `css/legal.css`; terminal mode prints it too. |
 | `crt/` | terminal mode — a CRT/TUI overlay for the two pages above. |
 | `content/writeups/funpage/` | a TryHackMe write-up. Self-contained, own CSS. |
@@ -94,10 +95,17 @@ The site's entire dependency on `crt/` is one line before `</body>`:
 <script type="module" src="/crt/boot.js"></script>
 ```
 
-Only `index.html` and `lightweight-blocker.html` carry it. Delete the line and
-terminal mode is gone; the pages underneath are complete, working documents on
-their own. `boot.js` feature-gates on pointer, touch, UA and viewport, and
-lazy-loads everything else — on a phone `crt.css` is never even requested.
+Only `index.html`, `lightweight-blocker.html` and `404.html` carry it. Delete
+the line and terminal mode is gone; the pages underneath are complete, working
+documents on their own. `boot.js` feature-gates on pointer, touch, UA and
+viewport, and lazy-loads everything else — on a phone `boot.js` is the only
+file under `crt/` that is requested.
+
+`boot.js` has no imports, on purpose: it runs as early as the page's own
+stylesheet lands, and when the tube is about to open it covers the page with a
+black sheet until `crt.css` and the modules arrive, so the light page never
+flashes first. An import there brings the flash back; see "Constraints" in
+`crt/README.md`.
 
 **On desktop it is the default view**, not an opt-in: the page powers up as a
 CRT. Leaving is remembered for the rest of the tab (`sessionStorage`): links
@@ -174,7 +182,12 @@ photographic images get resized.
 
 - **Adding a page** means updating `sitemap.xml` (with `lastmod`) and
   `llms.txt`. `robots.txt` points at the sitemap and keeps the repo's notes
-  (`CLAUDE.md`, the READMEs) out of search — the repo is served as-is.
+  (`CLAUDE.md`, the READMEs) and the game's test tooling out of search — the
+  repo is served as-is. `sitemap.xml` has CRLF line endings; keep them, or the
+  whole file shows up in the diff.
+- **`404.html` is the exception**: it is in neither list and carries
+  `noindex`. It is served for a missing address at any depth, so every URL in
+  it must be root-relative (`/css/style.css`, never `css/style.css`).
 - **The privacy notice lists every storage key and every third-party asset.**
   Adding a `localStorage`/`sessionStorage` key, a cookie, a font or borrowed
   code means updating `privacy.html` (and the licence table in `README.md`);
@@ -182,7 +195,7 @@ photographic images get resized.
   The game links to the notice from its field guide by full URL
   (`PRIVACY_URL` in `swarmvshero/src/hud.js`), because it is also hosted
   away from this site; keep it absolute.
-- **The two root pages, the privacy page and the write-up carry a
+- **The two root pages, the 404 page, the privacy page and the write-up carry a
   Content-Security-Policy `<meta>`** (GitHub Pages cannot send headers; `swarmvshero/` has none yet): `default-src 'self'; img-src 'self' data:` plus lockdowns. So
   no inline `<script>`, no `on…=` attributes and no `style=` attributes in
   markup. JSON-LD blocks are fine (never executed), and so is setting

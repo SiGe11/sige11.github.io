@@ -6,10 +6,32 @@ import { segments, pad, setEllipsis } from './text.js';
 import { buildVfs } from './vfs.js';
 import { createPageView } from './pageview.js';
 import { createShell } from './shell.js';
-import { markBooted, markLeft } from './mode.js';
 
 /* φωσφόρος — light-bearer. What a green screen is, literally. */
 const SYSTEM = 'PhosphorOs';
+
+/* What the tab remembers about terminal mode (that the visitor left it,
+   that the tube has warmed up) is boot.js's to keep: it must know before
+   any of this is loaded. It hands its two notes in through open(); opened
+   without them, nothing is remembered. */
+const NO_MEMORY = { booted() {}, left() {} };
+
+/* The tube's black, --crt-bg in crt.css: the browser's own chrome is
+   tinted with it while the screen is up. */
+const TUBE_COLOR = '#060a07';
+
+/* The keys the terminal answers to: ones that type, move or confirm. The
+   rest — function keys, bare modifiers, media keys — stay the browser's
+   even where a view takes "any key": F5 must still reload. */
+const OWN_KEYS = new Set([
+    'Enter', 'Escape', 'Tab', 'Backspace', 'Delete',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Home', 'End', 'PageUp', 'PageDown',
+]);
+const isOwnKey = (key) => key.length === 1 || OWN_KEYS.has(key);
+
+/* How long the menu ignores the keyboard after the boot crawl hands over. */
+const QUIET_AFTER_BOOT = 450;   // ms
 
 /* Box drawing holds the grid together only while every glyph is one cell
    wide. If the rendering font disagrees, measure() falls back to ASCII. */
@@ -75,7 +97,7 @@ function typedWithModifier(event) {
 }
 
 /* Screen */
-function createScreen() {
+function createScreen(memory) {
     const root = document.createElement('div');
     root.className = 'crt';
     root.tabIndex = -1;
@@ -92,8 +114,35 @@ function createScreen() {
     let lineH = 20;
     let view = null;
     let closing = false;
+    let quietUntil = 0;
 
     const siblings = [];
+
+    /* The browser paints its own chrome (Safari's tab bar, a toolbar) in
+       the page's theme colour: paper for the document, the tube's black
+       for as long as this is up. */
+    let themeTag = null;
+    let themeWas = '';
+    let themeIsOurs = false;       // the page had none: remove it again
+
+    function tintChrome(on) {
+        if (on) {
+            themeTag = document.querySelector('meta[name="theme-color"]');
+            themeIsOurs = !themeTag;
+            if (themeIsOurs) {
+                themeTag = document.createElement('meta');
+                themeTag.name = 'theme-color';
+                document.head.appendChild(themeTag);
+            } else {
+                themeWas = themeTag.getAttribute('content') || '';
+            }
+            themeTag.setAttribute('content', TUBE_COLOR);
+        } else if (themeTag) {
+            if (themeIsOurs) themeTag.remove();
+            else themeTag.setAttribute('content', themeWas);
+            themeTag = null;
+        }
+    }
 
     function measure() {
         const probe = document.createElement('span');
@@ -233,8 +282,24 @@ function createScreen() {
             if (event.ctrlKey && !'lLcCuUaAeEkK'.includes(event.key)) return;
         }
 
+        // Fresh out of the boot crawl: a key meant to skip it, pressed a
+        // moment late or still held down, must not land on the menu and
+        // open a link. Escape still leaves.
+        if (performance.now() < quietUntil && event.key !== 'Escape') {
+            if (isOwnKey(event.key)) {
+                event.preventDefault();          // Enter would follow the focused link
+                event.stopPropagation();
+            }
+            return;
+        }
+
         // What the views see: AltGr's phantom Ctrl taken off.
-        const input = { key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey && !typed };
+        const input = {
+            key: event.key,
+            shiftKey: event.shiftKey,
+            ctrlKey: event.ctrlKey && !typed,
+            repeat: event.repeat,
+        };
         if (view && view.key && view.key(input)) {
             event.preventDefault();
             event.stopPropagation();
@@ -386,6 +451,7 @@ function createScreen() {
         }
         document.body.appendChild(root);
         document.documentElement.style.overflow = 'hidden';
+        tintChrome(true);
 
         root.querySelector('.crt__exit')
             .addEventListener('click', () => screen.close());
@@ -429,6 +495,7 @@ function createScreen() {
 
         root.remove();
         document.documentElement.style.overflow = '';
+        tintChrome(false);
         for (const [node, wasInert] of siblings) {
             if (!wasInert) node.removeAttribute('inert');
         }
@@ -451,6 +518,11 @@ function createScreen() {
         /** Fill a line to the full width of the screen. */
         pad: (line) => pad(line, screen.cols),
 
+        /** Ignore the keyboard for `ms` (Escape excepted). */
+        quiet(ms) {
+            quietUntil = performance.now() + ms;
+        },
+
         /** Follow a link the way the normal site would. */
         navigate(href, options = {}) {
             // A file that navigates after a short beat (swarm.exe) must not
@@ -470,8 +542,8 @@ function createScreen() {
             if (closing) return;
             closing = true;
             // Honoured for the rest of the tab: links followed from the
-            // plain page stay plain (boot.js reads it).
-            markLeft(true);
+            // plain page stay plain (boot.js keeps the note, and reads it).
+            memory.left(true);
 
             const finish = () => {
                 unmount();
@@ -507,7 +579,8 @@ function createScreen() {
     return screen;
 }
 
-/* Boot sequence — a short power-on crawl, skippable with any key. */
+/* Boot sequence — a short power-on crawl, skippable with any key that
+   types, moves or confirms. */
 function createBootView(screen, done) {
     const lines = bootLines();
     let shown = 0;
@@ -538,7 +611,10 @@ function createBootView(screen, done) {
             screen.render(lines.slice(0, shown).map((l) => screen.pad(l)));
         },
         key(input) {
-            // Escape leaves, as it does everywhere else; any other key skips.
+            // Function keys and bare modifiers are not "any key": the
+            // browser keeps them, so F5 reloads mid-crawl as it should.
+            if (!isOwnKey(input.key)) return false;
+            // Escape leaves, as it does everywhere else; the rest skip.
             if (input.key === 'Escape') screen.close();
             else finish();
             return true;
@@ -555,14 +631,15 @@ export function close(options) {
 export function open(options = {}) {
     if (instance) return instance;
 
-    const screen = createScreen();
+    const memory = { ...NO_MEMORY, ...options.memory };
+    const screen = createScreen(memory);
     instance = screen;
     screen.vfs = buildVfs(screen);
     screen.mount();
 
     const instant = options.instant === true || reducedMotion();
-    markBooted();
-    markLeft(false);                   // switched on again: links stay in it
+    memory.booted();
+    memory.left(false);                // switched on again: links stay in it
 
     // Flush layout so the animation starts at its first keyframe. Not rAF:
     // it never fires in a hidden tab, leaving the screen mounted and invisible.
@@ -580,8 +657,17 @@ export function open(options = {}) {
         });
     }
 
-    if (instant) screen.showPage();
-    else screen.setView(createBootView(screen, () => screen.showPage()));
+    if (instant) {
+        screen.showPage();
+    } else {
+        screen.setView(createBootView(screen, () => {
+            // The menu appears under whatever key was skipping the crawl:
+            // hold the keyboard off for a beat, or a late or held Enter
+            // opens the first link.
+            screen.quiet(QUIET_AFTER_BOOT);
+            screen.showPage();
+        }));
+    }
 
     screen.settle();
 

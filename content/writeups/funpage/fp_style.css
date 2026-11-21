@@ -80,6 +80,9 @@ a {
     padding: 0.25rem 0.5rem;
     border-radius: 0.25rem;
     cursor: pointer;
+    /* Named: a button does not inherit the page's font, and would fall
+       back to the system's (Arial, on most machines). */
+    font-family: "Open Sans", sans-serif;
     font-size: 0.875rem;
 }
 
@@ -134,10 +137,10 @@ a {
 }
 
 /* A long page: fixed, the privacy link would sit on the text while it
-   scrolls. Here it closes the page instead, still bottom right. */
+   scrolls. Here it closes the page instead, still bottom right — the
+   spacing is the link's own padding (style.css), which is its tap area. */
 .site-foot {
     position: static;
-    padding: 0 1rem 0.75rem;
     text-align: right;
 }
 

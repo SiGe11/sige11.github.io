@@ -58,6 +58,31 @@ export function wrap(str, max) {
     return out;
 }
 
+/** Break a line into rows of at most `cols` cells, as a terminal does: at
+    the edge, mid-word if need be, each piece keeping its styling. */
+export function hardWrap(line, cols) {
+    const rows = [];
+    let row = [];
+    let used = 0;
+    for (const seg of segments(line)) {
+        let text = String(seg.t);
+        while (used + text.length > cols) {
+            const take = cols - used;
+            if (take > 0) row.push({ ...seg, t: text.slice(0, take) });
+            rows.push(row);
+            row = [];
+            used = 0;
+            text = text.slice(take);
+        }
+        if (text) {
+            row.push({ ...seg, t: text });
+            used += text.length;
+        }
+    }
+    if (row.length || !rows.length) rows.push(row);
+    return rows;
+}
+
 /** `LABEL .......... value` — the classic dotted leader. */
 export function leader(label, value, cols, dotClass = 'crt-dim') {
     const room = cols - label.length - value.length - 2;

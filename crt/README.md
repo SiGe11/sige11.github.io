@@ -32,12 +32,22 @@ On an eligible machine it preloads every module side by side (`MODULES` in
 `crt.css` has loaded: the glyph is injected on its `load`, and if it fails
 there is no terminal mode at all rather than an unstyled one.
 
-`mode.js` carries two flags in `sessionStorage`. `sige.crt.left` is set by
+`boot.js` keeps two flags in `sessionStorage`. `sige.crt.left` is set by
 every way out (`close()` in `crt.js`) and cleared by `open()`; `boot.js`
 skips the auto-start while it is set, unless the navigation is a reload.
 `sige.crt.seen` keeps the power-on crawl to once per tab, so a link followed
 inside the terminal does not replay the boot. Access is wrapped — reading
-`sessionStorage` throws outright when site data is blocked.
+`sessionStorage` throws outright when site data is blocked. `crt.js` never
+touches storage itself: `boot.js` hands it a `memory` object through
+`open()` to write the two notes with.
+
+That split exists because **`boot.js` has no imports**. An import is a round
+trip before the file can run, and until it runs the plain page is what the
+visitor sees. When it does run and the tube is going to open, it first draws
+a **curtain** — a black sheet over the page, styled from script — so the
+light page never shows while `crt.css` and the modules are on their way. The
+curtain comes off once the tube is up, and also when it never arrives: at
+once if a request fails, after three seconds (`CURTAIN_MAX`) if one stalls.
 
 ## Keys
 
@@ -51,23 +61,34 @@ inside the terminal does not replay the boot. Access is wrapped — reading
 | `:p`, or a click on `:p privacy` | the privacy notice, paged inside the frame |
 | Esc, or a click on `ESC escape` | leave terminal mode — also mid-crawl |
 
+The power-on crawl is skipped by any key that types, moves or confirms.
+Function keys and bare modifiers are left to the browser (F5 reloads
+mid-crawl), and for a moment after the crawl the menu ignores the keyboard,
+so the key that was skipping it does not open the first link.
+
 In the notice, `less`'s keys (`pagerDelta()` in `notice.js`): arrows / `j` `k`
 / Enter a line, Space / PageDown / `f` and Shift+Space / PageUp / `b` a screen,
 `d` `u` half a screen, `g` `G` `<` `>` Home End the ends, the wheel too; `q`,
-Backspace, `:q` or a click on `Q back` return to the links.
+Backspace, `:q` or a click on `Q back` return to the links. Tab and Shift+Tab
+are the one addition: they step through the notice's links on screen, and
+Enter then follows the one in focus instead of scrolling.
 
 **Console** — `help` lists the lot: `ls`, `dir`, `cat <file>`,
 `echo <file\|text>`, `./<file>`, `privacynotice`, `date`, `uname`, `clear`,
 `exit`. `privacynotice` opens the notice full-screen as `less` would: the same
-keys as above, `~` past the end, a reverse-video prompt line that reads
-`(END)` at the end, and `q` (or Esc, or a click on `Q quit`) back to the
-prompt with the console as it was. Tab
-completes as bash does (unique match, then the shared prefix, then a listing;
-dotfiles only once the word starts with `.`), up walks the history, Ctrl+L
+keys as above, Tab for its links, `~` past the end, a reverse-video prompt
+line that reads `(END)` at the end, and `q` (or Esc, or a click on `Q quit`)
+back to the prompt with the console as it was. Tab
+completes as bash does (unique match, then the shared prefix, then a listing
+in columns; dotfiles only once the word starts with `.`). Where a command
+goes it offers what can be run — commands and executables — and a word
+starting with `./` names a file, so the commands drop out. Up walks the
+history, Ctrl+L
 clears, Ctrl+C abandons the line — unless text is selected, when the browser
 gets the key and copies. Cmd/Ctrl+V pastes the clipboard's first non-empty
 line. AltGr and Option characters (`~ | \ @ { }` on most non-US layouts),
-dead keys and IME input all type as text.
+dead keys and IME input all type as text. A line longer than the screen wraps
+at its edge, input and output alike.
 
 Files in `~`: `about.txt`, `site.sh` (draw the site again), `legacy.sh` (back
 to the normal site), `swarm.exe`, `writeup.sh`.
@@ -76,15 +97,14 @@ to the normal site), `swarm.exe`, `writeup.sh`.
 
 | File | |
 |------|--|
-| `boot.js` | eligibility, module preloads, the trigger glyph, lazy-loads the rest |
-| `mode.js` | did the visitor leave it; has the tube warmed up — per tab |
+| `boot.js` | eligibility, what the tab remembers, the curtain, module preloads, the trigger glyph, lazy-loads the rest |
 | `crt.js` | overlay, character grid, key routing, power on/off |
 | `pageview.js` | the site as a TUI, and the `:` command line |
 | `shell.js` | the console — commands live in `COMMANDS` |
 | `vfs.js` | the files in `~` and what running them does |
 | `page.js` | reads the document, so the two views cannot drift |
-| `notice.js` | reads `/privacy.html` and lays it out, for `:p` and `privacynotice` |
-| `text.js` | padding, wrapping, dotted leaders |
+| `notice.js` | reads `/privacy.html` and lays it out, for `:p` and `privacynotice`; their shared keys |
+| `text.js` | padding, wrapping (by word and at the edge), dotted leaders |
 | `crt.css` | phosphor, scanlines, jitter, flutter, power on/off |
 
 Edit points: `PROFILE` in `vfs.js` is what `about.txt` says (the links under
@@ -143,6 +163,26 @@ Latin; everything it renders stays in English.
 * **No stylesheet, no screen.** An unstyled screen still makes every sibling
   `inert` and locks scrolling, so `boot.js` rejects on a `crt.css` error
   instead of opening anyway.
+* **Keep `boot.js` free of imports.** It is fetched alongside the page's own
+  stylesheet; one import puts a round trip between that and the curtain, and
+  the light page shows for the length of it (17 frames at 120 ms a request,
+  before this was fixed). Shared code goes to `crt.js` and its modules, which
+  load behind the curtain.
+* **The curtain must always come off.** It is lifted when `start()` settles,
+  whichever way, and by a timer if it never does. A new early return or await
+  in `init()` needs the same care, or a failed request leaves a black page.
+* **The curtain and the screen's background are `--crt-bg` three times**:
+  `crt.css`, `CURTAIN_COLOR` in `boot.js` and `TUBE_COLOR` in `crt.js` (the
+  `theme-color` the browser's chrome takes while the tube is up, put back on
+  the way out). The first two cannot share a variable: the curtain exists
+  because `crt.css` has not loaded.
+* **"Any key" is not every key.** `isOwnKey()` in `crt.js` decides what the
+  terminal answers to; function keys and bare modifiers go to the browser.
+  A view that returns `true` for everything (the boot crawl did) takes F5
+  and F12 with it.
+* **A key held down repeats, and the menu appears under the key that skipped
+  the crawl.** Hence the quiet spell after it (`QUIET_AFTER_BOOT`) and the
+  `repeat` guard on the keys that open something in `pageview.js`.
 * **`is-powering-on` is removed on the `crt-hold` `animationend`**, the last
   power-on animation to finish; otherwise its fill keeps a filter on the whole
   screen. Retiming the power-on means checking which animation ends last.
@@ -160,6 +200,10 @@ Latin; everything it renders stays in English.
   skipped, anything else is a paragraph. Inside them `strong` turns bright and
   `a[href]` stays a link. Restructuring that page changes what the terminal
   prints, so check `:p` after editing it.
+* **A link in the notice that wraps is two anchors**, one per row, and so two
+  Tab stops. Each carries the whole link's text as `aria-label`, so both are
+  announced by name. Focus on one is dropped by any redraw (scrolling), as
+  the row it sat on is rebuilt.
 
 ## Verified
 
@@ -186,6 +230,20 @@ completion, `help`, `about.txt`, `site.sh`, Esc, and no errors in the console.
 In real Safari 26.6.2 through `safaridriver`: boot, Esc, a link followed after
 leaving (stays plain), reload and the glyph (both bring it back), and `:p` and
 the pager with real keystrokes. Not re-run with axe-core.
+
+After the November 2026 audit fixes, at 1280x800 (the console at 800x520
+too) on Chromium 153, Firefox 155 and WebKit 26.6 (Playwright), every request
+delayed 120 ms for the first check: no frame of the light page before the tube (one in
+WebKit; 16-17 before the change), the curtain lifting on a failed `crt.css`
+and three seconds into a stalled `crt.js`, F5 and a bare modifier mid-crawl,
+keys right after the crawl and a held Enter opening nothing, completion
+(empty prompt, `./`, `./ex`, `./le`, `cat ab`), a wrapped long line with its
+caret, `sh` with no file, Tab and Enter on the notice's links in `:p` and in
+the pager, focus back on the command line after the pager, `theme-color` in
+and out, the glyph's focus ring, staying plain after leaving, a reload,
+reduced motion, the 404 page, and a phone-shaped context requesting nothing
+under `crt/` but `boot.js`. No console errors or CSP reports. Not re-run in
+real Safari, with axe-core, or against the back/forward cache.
 
 Floor is roughly Chrome/Edge 86, Firefox 78, Safari 14 — ES modules,
 `replaceChildren` (which has a fallback) and custom properties. Older

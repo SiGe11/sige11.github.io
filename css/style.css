@@ -91,15 +91,21 @@ a:focus-visible {
 /* The privacy link, as small print in the bottom-right corner (the terminal
    glyph has the bottom-left). It sits outside .info-block on purpose:
    terminal mode lists every link in there. The grey is the faintest that
-   still makes 4.5:1 on the page background. */
+   still makes 4.5:1 on the page background.
+
+   The offsets are the link's padding, not the footer's position: the word
+   sits where it always did (1rem in, 0.75rem up), but a thumb gets 72x45px
+   to hit instead of the 40x17px of the text. */
 .site-foot {
     position: fixed;
-    right: 1rem;
-    bottom: 0.75rem;
+    right: 0;
+    bottom: 0;
     font-size: 0.75rem;
 }
 
 .site-foot a {
+    display: inline-block;
+    padding: 1rem 1rem 0.75rem;
     color: #65717d;
 }
 

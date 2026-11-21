@@ -43,12 +43,16 @@
     background-color: rgba(38, 113, 159, 0.07);
 }
 
-/* Its own rule: a browser without :focus-visible would drop :hover too. */
+/* Its own rule: a browser without :focus-visible would drop :hover too.
+   The ring is at full strength (5:1 on the page): the hover tint alone is
+   about 1.6:1, too faint to say where the keyboard is — and this is where
+   focus lands on the way out of terminal mode. */
 .crt-trigger:focus-visible {
     color: #26719f;
     border-color: rgba(38, 113, 159, 0.35);
     background-color: rgba(38, 113, 159, 0.07);
-    outline: none;
+    outline: 2px solid #26719f;
+    outline-offset: 2px;
 }
 
 .crt-trigger__cursor {
@@ -372,6 +376,17 @@
 
 .crt .crt-link:hover {
     color: var(--crt-bright);
+}
+
+/* Tab steps through the notice's links (stepLink() in notice.js). Inverse
+   video marks the one in focus, as it marks the selected row in the menu.
+   After :hover, so a focused link under the mouse stays readable. */
+.crt .crt-link:focus {
+    background: var(--crt-fg);
+    color: #04170b;
+    text-shadow: none;
+    text-decoration: none;
+    box-shadow: 0 0.16em 0 var(--crt-fg), 0 -0.16em 0 var(--crt-fg);
 }
 
 /* The status line's clickable hints (ESC, :p, Q back) are also the mouse's

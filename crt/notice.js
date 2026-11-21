@@ -39,7 +39,15 @@ function inline(node, base, style = {}) {
             let next = style;
             if (child.tagName === 'A' && child.getAttribute('href')) {
                 const url = new URL(child.getAttribute('href'), base);
-                next = { ...style, c: 'crt-link', href: url.href, external: url.origin !== location.origin };
+                next = {
+                    ...style,
+                    c: 'crt-link',
+                    href: url.href,
+                    external: url.origin !== location.origin,
+                    // A link broken over two rows is two anchors; each
+                    // is announced by the whole link's name.
+                    label: child.textContent.trim().replace(/\s+/g, ' '),
+                };
             } else if (child.tagName === 'STRONG' || child.tagName === 'B') {
                 next = { ...style, c: 'crt-bright' };
             }
@@ -153,6 +161,30 @@ export function pagerDelta(event, page) {
         default:
             return null;
     }
+}
+
+/* The keyboard's way to the notice's links. Both views page the text with
+   every other key, so Tab is the one that reaches them: real focus steps
+   through the links on screen, round and round, and Enter follows the one
+   in focus. A redraw (any scrolling) drops the focus with the row. */
+
+const LINKS = '.crt__buffer a.crt-link';
+
+/** Move focus to the next link on screen, or the previous one. */
+export function stepLink(root, backwards = false) {
+    const links = Array.from(root.querySelectorAll(LINKS));
+    if (!links.length) return;
+    const at = links.indexOf(document.activeElement);
+    const next = at < 0
+        ? (backwards ? links.length - 1 : 0)
+        : (at + (backwards ? -1 : 1) + links.length) % links.length;
+    links[next].focus({ preventScroll: true });
+}
+
+/** Is focus on one of the notice's links? */
+export function onLink(root) {
+    const active = document.activeElement;
+    return !!active && root.contains(active) && active.matches(LINKS);
 }
 
 const restyle = (segs, c) => segs.map((s) => ({ t: String(s.t).toUpperCase(), c }));

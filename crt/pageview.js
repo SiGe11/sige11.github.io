@@ -11,7 +11,7 @@
 
 import { segments, wrap, clip, spaced, leader, width } from './text.js';
 import { readPage, prettyUrl } from './page.js';
-import { loadNotice, noticeLines, pagerDelta, NOTICE_PATH } from './notice.js';
+import { loadNotice, noticeLines, pagerDelta, stepLink, onLink, NOTICE_PATH } from './notice.js';
 
 /* Status-line hints, longest first: the first that fits is shown. */
 const HINTS_LINKS = [
@@ -20,6 +20,7 @@ const HINTS_LINKS = [
     ['ARROWS', 'ENTER open', 'BKSP back', 'Q or :q exit'],
 ];
 const HINTS_NOTICE = [
+    ['ARROWS scroll', 'SPACE page', 'TAB links'],
     ['ARROWS scroll', 'SPACE page'],
     ['ARROWS scroll'],
 ];
@@ -231,7 +232,10 @@ export function createPageView(screen) {
         position or scroll percentage) on the right when there is room. */
     function statusLine(where) {
         if (command !== null) {
-            return [{ t: ':' + command }, { t: ' ', c: 'crt-cursor' }];
+            // One row only: a command longer than it shows its tail, so
+            // the caret never runs off the edge.
+            const room = Math.max(1, screen.cols - 2);
+            return [{ t: ':' + command.slice(-room) }, { t: ' ', c: 'crt-cursor' }];
         }
         if (message) {
             return [{ t: ' ' + clip(message, screen.cols - 2), c: 'crt-warn' }];
@@ -320,7 +324,7 @@ export function createPageView(screen) {
         }
         if (cmd === 'h' || cmd === 'help') {
             message = notice
-                ? 'Arrow keys and SPACE scroll, q goes back to the links.'
+                ? 'Arrow keys and SPACE scroll, TAB then ENTER follows a link, q goes back.'
                 : 'Arrow keys move, ENTER opens, :p shows the privacy notice, q drops to the console.';
         } else if (cmd === '') {
             message = null;
@@ -349,6 +353,12 @@ export function createPageView(screen) {
         }
 
         if (notice) return noticeKey(event);
+
+        // A key held down repeats. Moving the selection that way is fine;
+        // opening a link a dozen times, or one page after another, is not.
+        if (event.repeat && (k === 'Enter' || k === ' ' || k === 'Backspace' || /^[1-9]$/.test(k))) {
+            return true;
+        }
 
         switch (k) {
             case 'ArrowDown': case 'ArrowRight': case 'j':
@@ -384,8 +394,17 @@ export function createPageView(screen) {
         return false;
     }
 
-    /** Keys while the notice is up: less's, as the console's pager has. */
+    /** Keys while the notice is up: less's, as the console's pager has.
+        Tab is the one that is not: it steps through the links on screen,
+        and Enter then follows the one in focus instead of scrolling. */
     function noticeKey(event) {
+        if (event.key === 'Tab') {
+            // As in the list, focus stays in the tube.
+            stepLink(screen.root, event.shiftKey);
+            return true;
+        }
+        if (event.key === 'Enter' && onLink(screen.root)) return false;   // the browser follows it
+
         const delta = pagerDelta(event, Math.max(1, screen.rows - 4));
         if (delta !== null) return scrollNotice(delta);
         switch (event.key) {
@@ -395,8 +414,6 @@ export function createPageView(screen) {
                 command = ''; message = null; draw(); return true;
             case 'Escape':
                 screen.close(); return true;
-            case 'Tab':
-                return true;   // as in the list: focus stays in the tube
             default:
                 return false;
         }

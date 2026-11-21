@@ -2,8 +2,8 @@
    New commands go in COMMANDS below; new files go in vfs.js and are picked
    up here for free (listing, cat, completion). */
 
-import { clip } from './text.js';
-import { loadNotice, noticeLines, pagerDelta, NOTICE_PATH } from './notice.js';
+import { clip, hardWrap, width } from './text.js';
+import { loadNotice, noticeLines, pagerDelta, stepLink, onLink, NOTICE_PATH } from './notice.js';
 
 const CWD = '~';
 
@@ -30,6 +30,21 @@ export function createShell(screen, options = {}) {
             [{ t: 'Type ' }, { t: 'help', c: 'crt-bright' }, { t: ' for commands.' }],
             '',
         );
+    }
+
+    /** Names in columns that fit the screen, the way ls prints: as many
+        rows as it takes, never one row running off the edge. */
+    function columns(cells) {
+        if (!cells.length) return [];
+        const colWidth = Math.max(...cells.map((cell) => cell.t.length)) + 2;
+        const perRow = Math.max(1, Math.floor((screen.cols - 2) / colWidth));
+        const rows = [];
+        for (let i = 0; i < cells.length; i += perRow) {
+            rows.push([{ t: '  ' }].concat(
+                cells.slice(i, i + perRow).map((cell) => ({ t: cell.t.padEnd(colWidth), c: cell.c })),
+            ));
+        }
+        return rows;
     }
 
     // file helpers
@@ -85,20 +100,10 @@ export function createShell(screen, options = {}) {
                 return;
             }
             // Plain columns, the way ls actually prints.
-            const names = entries.map((e) => e.name + (e.kind === 'exec' ? '*' : ''));
-            const colWidth = Math.max(...names.map((n) => n.length)) + 2;
-            const perRow = Math.max(1, Math.floor((screen.cols - 2) / colWidth));
-
-            for (let i = 0; i < names.length; i += perRow) {
-                const row = [{ t: '  ' }];
-                names.slice(i, i + perRow).forEach((name, j) => {
-                    row.push({
-                        t: name.padEnd(colWidth),
-                        c: entries[i + j].kind === 'exec' ? 'crt-bright' : '',
-                    });
-                });
-                print(row);
-            }
+            print(...columns(entries.map((e) => ({
+                t: e.name + (e.kind === 'exec' ? '*' : ''),
+                c: e.kind === 'exec' ? 'crt-bright' : '',
+            }))));
         },
 
         dir: (args) => {
@@ -186,8 +191,13 @@ export function createShell(screen, options = {}) {
             if (Object.prototype.hasOwnProperty.call(COMMANDS, name)) {
                 COMMANDS[name](args);
             } else if (name === 'run' || name === 'exec' || name === 'sh') {
-                if (!args.length || !runFile(args[0])) {
-                    print({ t: `${name}: ${args[0] || ''}: No such file`, c: 'crt-warn' });
+                if (!args.length) {
+                    print(
+                        { t: `${name}: missing file operand`, c: 'crt-warn' },
+                        { t: `Usage: ${name} <file> — \`ls\` shows what there is to run.`, c: 'crt-dim' },
+                    );
+                } else if (!runFile(args[0])) {
+                    print({ t: `${name}: ${clip(args[0], 40)}: No such file`, c: 'crt-warn' });
                 }
             } else if (!runFile(name)) {
                 print(
@@ -205,15 +215,23 @@ export function createShell(screen, options = {}) {
     /** Tab completion over command names and file names. Like bash: a
         unique match completes, several extend to what they share, and only
         when nothing can be added are they listed. Dotfiles stay out of it
-        until the word itself starts with a dot. */
+        until the word itself starts with a dot.
+
+        Where a command goes, only what can be run is offered: commands
+        and executables — and once the word starts with `./` it names a
+        file, so the commands drop out (`./ex` is not `exit`). */
     function complete() {
         const parts = input.split(/\s+/);
         const word = parts[parts.length - 1] || '';
         const bare = (name) => name.replace(/^\.\//, '');
         const prefix = bare(word);
-        const pool = parts.length > 1
-            ? screen.vfs.list(prefix.startsWith('.')).map((e) => e.name)
-            : Object.keys(COMMANDS).concat(screen.vfs.list().map((e) => './' + e.name));
+        const files = () => screen.vfs.list(prefix.startsWith('.'));
+        const runnable = () => files().filter((e) => e.kind === 'exec').map((e) => './' + e.name);
+
+        let pool;
+        if (parts.length > 1) pool = files().map((e) => e.name);
+        else if (word.startsWith('./')) pool = runnable();
+        else pool = Object.keys(COMMANDS).concat(runnable());
 
         const hits = pool.filter((c) => bare(c).startsWith(prefix));
         if (!hits.length) return;
@@ -232,7 +250,7 @@ export function createShell(screen, options = {}) {
             caret = input.length;
         } else {
             print([{ t: prompt, c: 'crt-dim' }, { t: input }]);
-            print({ t: '  ' + hits.join('   '), c: 'crt-dim' });
+            print(...columns(hits.map((hit) => ({ t: hit, c: 'crt-dim' }))));
         }
         draw();
     }
@@ -273,9 +291,14 @@ export function createShell(screen, options = {}) {
     function draw() {
         if (pager) { drawPager(); return; }
 
+        // A line longer than the tube wraps at its edge, as on a terminal:
+        // a long command stays readable and the caret stays on screen.
         const visible = screen.rows - 1;
-        const all = output.concat([promptLine()]);
-        const end = Math.max(0, all.length - scroll);
+        const all = output.concat([promptLine()])
+            .flatMap((line) => hardWrap(line, screen.cols));
+        // Scrolled back no further than the first row at the top.
+        scroll = Math.min(scroll, Math.max(0, all.length - visible));
+        const end = all.length - scroll;
         const start = Math.max(0, end - visible);
         const lines = all.slice(start, end);
         while (lines.length < visible) lines.push('');
@@ -299,24 +322,35 @@ export function createShell(screen, options = {}) {
         const where = pager.top >= pager.max
             ? ' (END) '
             : ` ${NOTICE_PATH.slice(1)}  lines ${pager.top + 1}-${last}/${body.length}  ${Math.round((last / body.length) * 100)}% `;
-        lines.push([
+        const status = [
             { t: where, c: 'crt-sel' },
             { t: '   ARROWS scroll   SPACE page   ', c: 'crt-dim' },
             { t: 'Q quit', c: 'crt-dim', action: 'quit' },
-        ]);
+        ];
+        // Only where there is room: `Q quit` is the mouse's way out and
+        // must not be pushed off a narrow tube.
+        const tab = '   TAB links';
+        if (width(status) + tab.length <= screen.cols) status.push({ t: tab, c: 'crt-dim' });
+        lines.push(status);
         screen.render(lines.map((l) => screen.pad(l)));
     }
 
     function closePager() {
         pager = null;
         draw();
+        // Tab may have left focus on one of the notice's links, now gone.
+        screen.focusField();
     }
 
-    /** less's keys; q (or Esc) goes back to the prompt as it was. */
+    /** less's keys; q (or Esc) goes back to the prompt as it was. Tab is
+        not less's: it steps through the links on screen, and Enter then
+        follows the one in focus instead of scrolling. */
     function pagerKey(event) {
         if (event.ctrlKey) return false;
         const k = event.key;
         if (k === 'q' || k === 'Q' || k === 'Escape') { closePager(); return true; }
+        if (k === 'Tab') { stepLink(screen.root, event.shiftKey); return true; }
+        if (k === 'Enter' && onLink(screen.root)) return false;   // the browser follows it
 
         const delta = pagerDelta(event, Math.max(1, screen.rows - 2));
         if (delta !== null) {
@@ -326,7 +360,7 @@ export function createShell(screen, options = {}) {
         }
         // Other letters do nothing, as in less, and must not reach the page
         // (/ would open Firefox's quick find). F5 and the like still pass.
-        return k.length === 1 || k === 'Tab';
+        return k.length === 1;
     }
 
     // input
@@ -366,7 +400,7 @@ export function createShell(screen, options = {}) {
             case 'ArrowRight': caret = Math.min(input.length, caret + 1); draw(); return true;
             case 'Home':       caret = 0; draw(); return true;
             case 'End':        caret = input.length; draw(); return true;
-            case 'PageUp':     scroll = Math.min(output.length, scroll + 5); draw(); return true;
+            case 'PageUp':     scroll += 5; draw(); return true;   // clamped when drawn
             case 'PageDown':   scroll = Math.max(0, scroll - 5); draw(); return true;
             case 'Escape':     input = ''; caret = 0; draw(); return true;
             default:           break;
@@ -392,7 +426,7 @@ export function createShell(screen, options = {}) {
         paste,
         wheel(event) {
             if (pager) pager.top += event.deltaY < 0 ? -3 : 3;
-            else scroll = Math.max(0, Math.min(output.length, scroll + (event.deltaY < 0 ? 3 : -3)));
+            else scroll = Math.max(0, scroll + (event.deltaY < 0 ? 3 : -3));   // clamped when drawn
             draw();
         },
         /** The pager's clickable `Q quit` (ESC is handled by crt.js). */

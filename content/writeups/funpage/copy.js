@@ -5,6 +5,12 @@
     // heard from the button itself; this polite status says it instead.
     const status = document.getElementById('copy-status');
 
+    // The copy shortcut as this keyboard has it: the fallback below names
+    // it, and "Ctrl+C" is the wrong advice on a Mac.
+    const apple = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+    const shortcut = apple ? '⌘C' : 'Ctrl+C';
+    const shortcutSpoken = apple ? 'Command+C' : 'Control+C';
+
     function copyToClipboard(button) {
         const code = button.nextElementSibling.innerText;
         const done = (label, spoken) => {
@@ -30,7 +36,7 @@
             try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
             field.remove();
             if (ok) done('Copied!', 'Command copied');
-            else done('Press Ctrl+C', 'Copy failed: select the command and press Ctrl+C');
+            else done(`Press ${shortcut}`, `Copy failed: select the command and press ${shortcutSpoken}`);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(code).then(() => done('Copied!', 'Command copied'), legacy);

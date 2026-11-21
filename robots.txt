@@ -1,6 +1,8 @@
 User-agent: *
-# The repo is served as-is; its notes are not pages.
+# The repo is served as-is; its notes and test tooling are not pages.
 Disallow: /CLAUDE.md
 Disallow: /README.md
 Disallow: /crt/README.md
+Disallow: /swarmvshero/README.md
+Disallow: /swarmvshero/dev/
 Sitemap: https://sige25.dev/sitemap.xml
